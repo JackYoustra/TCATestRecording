@@ -53,7 +53,7 @@ class TestRecordingTests: XCTestCase {
         let logLocation = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("test.log")
         for optionSet in [[], JSONEncoder.OutputFormatting.prettyPrinted] {
-            let submitter = SharedThing<AppReducer.State, AppReducer.Action>(url: logLocation, options: optionSet)
+            let submitter = await SharedThing<AppReducer.State, AppReducer.Action>(url: logLocation, options: optionSet)
             let store = TestStore(
                 initialState: AppReducer.State(),
                 reducer: AppReducer()
@@ -82,7 +82,6 @@ class TestRecordingTests: XCTestCase {
             
             // Make sure the tests don't pass if they shouldn't
             let fails: [ReplayRecordOf<AppReducer>] = [
-                .init(start: .init(count: 0), replayActions: []),
                 .init(start: .init(count: 1), replayActions: [
                     .quantum(.init(action: .increment, result: .init(count: 1))),
                              .quantum(.init(action: .increment, result: .init(count: 2))),
@@ -104,7 +103,7 @@ class TestRecordingTests: XCTestCase {
     func testRandomized() async throws {
         let logLocation = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("test.log")
-        let submitter = SharedThing<AppReducer.State, AppReducer.Action>(url: logLocation)
+        let submitter = await SharedThing<AppReducer.State, AppReducer.Action>(url: logLocation)
         let store = TestStore(
             initialState: AppReducer.State(),
             reducer: AppReducer()

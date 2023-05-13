@@ -3,8 +3,10 @@ import XCTest
 
 class IgnoreIssueResilientTests: XCTestCase {
     func testFailureWorkaround() {
-        ignoreIssueResilient {
-            
+        XCTExpectFailure {
+            ignoreIssueResilient {
+                
+            }
         }
     }
     
@@ -22,16 +24,25 @@ class IgnoreIssueResilientTests: XCTestCase {
 }
 
 extension XCTestCase {
-    func ignoreIssueResilient(_ execute: () throws -> ()) rethrows {
+    func ignoreIssueResilient(_ execute: () throws -> (), file: StaticString = #file, line: UInt = #line) rethrows {
         Lumos.swizzle(type: .instance, originalClass: XCTestCase.self, originalSelector: NSSelectorFromString("_recordIssue:"), swizzledClass: TestRecordingDummyStore.self, swizzledSelector: #selector(TestRecordingDummyStore._recordIssue(_:)))
+        TestRecordingDummyStore.didRecord = false
         defer {
-            Lumos.swizzle(type: .instance, originalClass: XCTestCase.self, originalSelector: NSSelectorFromString("_recordIssue:"), swizzledClass: TestRecordingDummyStore.self, swizzledSelector: #selector(TestRecordingDummyStore._recordIssue(_:)))
+            TestRecordingDummyStore.didRecord = false
         }
         try execute()
+        // Re-enable here so we can actually record a failure if it happens, lol
+        Lumos.swizzle(type: .instance, originalClass: XCTestCase.self, originalSelector: NSSelectorFromString("_recordIssue:"), swizzledClass: TestRecordingDummyStore.self, swizzledSelector: #selector(TestRecordingDummyStore._recordIssue(_:)))
+        if !TestRecordingDummyStore.didRecord {
+            XCTFail("Didn't have any error", file: file, line: line)
+        }
     }
 }
 
-private class TestRecordingDummyStore: NSObject {
+fileprivate class TestRecordingDummyStore: NSObject {
+    static var didRecord = false
+    
     @objc dynamic func _recordIssue(_ issue: XCTIssue) {
+        Self.didRecord = true
     }
 }

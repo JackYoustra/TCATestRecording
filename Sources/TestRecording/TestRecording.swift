@@ -157,8 +157,6 @@ extension ReplayRecord: Equatable where State: Equatable, Action: Equatable {
                 case let .setRNG(num):
                     store.dependencies.withRandomNumberGenerator = .init(SingleRNG(n: num))
                 }
-                break
-                
             }
         }
     }
@@ -186,7 +184,7 @@ public actor SharedThing<State: Encodable, Action: Encodable> {
         _ = await waiter.value
     }
     
-    init(url: URL, options: JSONEncoder.OutputFormatting? = nil) {
+    init(url: URL, options: JSONEncoder.OutputFormatting? = nil) async {
         var c: AsyncStream<LogEntry>.Continuation! = nil
         let asyncQueue = AsyncStream(LogEntry.self, bufferingPolicy: .unbounded, {
             c = $0
@@ -220,8 +218,8 @@ extension ReplayQuantum: Equatable where State: Equatable, Action: Equatable {}
 extension ReplayAction: Equatable where State: Equatable, Action: Equatable {}
 
 extension ReducerProtocol where State: Encodable, Action: Encodable {
-    public func record(to url: URL, options: JSONEncoder.OutputFormatting? = nil) -> _RecordReducer<Self> {
-        _RecordReducer(base: self, submitter: SharedThing<State, Action>.init(url: url, options: options))
+    public func record(to url: URL, options: JSONEncoder.OutputFormatting? = nil) async -> _RecordReducer<Self> {
+        _RecordReducer(base: self, submitter: await SharedThing<State, Action>.init(url: url, options: options))
     }
     
     public func record(with submitter: SharedThing<State, Action>) -> _RecordReducer<Self> {
