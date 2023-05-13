@@ -31,25 +31,26 @@ class TestRecordingTests: XCTestCase {
     func testExample() async throws {
         let logLocation = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("test.log")
-        let store = TestStore(
-            initialState: AppReducer.State(),
-            reducer: AppReducer()
-                ._printChanges(.replayWriter(url: logLocation, options: [.prettyPrinted]))
-        )
-        await store.send(.increment) {
-            $0.count = 1
+        for optionSet in [[], JSONEncoder.OutputFormatting.prettyPrinted] {
+            let store = TestStore(
+                initialState: AppReducer.State(),
+                reducer: AppReducer()
+                    ._printChanges(.replayWriter(url: logLocation, options: optionSet))
+            )
+            await store.send(.increment) {
+                $0.count = 1
+            }
+            
+            await store.send(.increment) {
+                $0.count = 2
+            }
+            // Assert contents at test.log matches "hi"
+            let data = try ReplayRecordOf<AppReducer>(url: logLocation)
+            let expected = ReplayRecordOf<AppReducer>(start: .init(count: 0), quantums: [
+                .init(action: .increment, result: .init(count: 1)),
+                .init(action: .increment, result: .init(count: 2)),
+            ])
+            XCTAssertNoDifference(expected, data)
         }
-
-        await store.send(.increment) {
-            $0.count = 2
-        }
-        print(try String.init(contentsOfFile: logLocation.path))
-        // Assert contents at test.log matches "hi"
-        let data = try await ReplayRecordOf<AppReducer>(from: logLocation)
-        let expected = ReplayRecordOf<AppReducer>(start: .init(count: 0), quantums: [
-            .init(action: .increment, result: .init(count: 1)),
-            .init(action: .increment, result: .init(count: 2)),
-        ])
-        XCTAssertNoDifference(expected, data)
     }
 }

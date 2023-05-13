@@ -32,15 +32,15 @@ public extension _ReducerPrinter where State: Encodable, Action: Encodable  {
                 // encode oldState as the initial state
                 outputStream.write(try! encoder.encode(oldState))
                 // write newline
-                outputStream.write("\n".data(using: .utf8)!)
+                outputStream.write(",\n".data(using: .utf8)!)
                 isFirst = false
             }
             // encode action
             outputStream.write(try! encoder.encode(action))
-            outputStream.write("\n".data(using: .utf8)!)
+            outputStream.write(",\n".data(using: .utf8)!)
             // encode newState
             outputStream.write(try! encoder.encode(newState))
-            outputStream.write("\n".data(using: .utf8)!)
+            outputStream.write(",\n".data(using: .utf8)!)
 //            defer { outputStream.close() }
             
         }
@@ -54,26 +54,26 @@ public struct ReplayQuantum<State: Decodable, Action: Decodable>: Decodable {
     public let result: State
 }
 
-public struct ReplayRecord<State: Decodable, Action: Decodable> {
+public struct ReplayRecord<State: Decodable, Action: Decodable>: Decodable {
     public let start: State
 
     public let quantums: [ReplayQuantum<State, Action>]
-
-    public init(from url: URL) async throws {
-        // read file, split on newlines, and then decode
-        // with a task group
-        let data = try Data(contentsOf: url)
-        let lines = data.split(separator: 0x0A)
+    
+    public init(url: URL) throws {
         let decoder = JSONDecoder()
-        async let quantums = lines.dropFirst(1).chunks(ofCount: 2).parallelMap { chunk in
-            assert(chunk.count == 2)
-            let (actionLine, resultLine) = (chunk.first!, chunk.last!)
-            let action = try decoder.decode(Action.self, from: actionLine)
-            let state = try decoder.decode(State.self, from: resultLine)
-            return ReplayQuantum(action: action, result: state)
+        let contents = try String(contentsOf: url)
+        self = try decoder.decode(Self.self, from: "[\(contents)]".data(using: .utf8)!)
+    }
+    
+    public init(from decoder: Decoder) throws {
+        var container: UnkeyedDecodingContainer = try decoder.unkeyedContainer()
+        self.start = try container.decode(State.self)
+        var quantums: [ReplayQuantum<State, Action>] = []
+        while !container.isAtEnd {
+            let quantum = ReplayQuantum(action: try container.decode(Action.self), result: try container.decode(State.self))
+            quantums.append(quantum)
         }
-        self.start = try decoder.decode(State.self, from: lines[0])
-        self.quantums = try await quantums
+        self.quantums = quantums
     }
     
     init(start: State, quantums: [ReplayQuantum<State, Action>]) {
