@@ -1,12 +1,30 @@
 {
   "pins" : [
     {
+      "identity" : "aspects",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/djpearce/Aspects",
+      "state" : {
+        "branch" : "master",
+        "revision" : "771b2f3da3b1a201f110b141854ca45070036ccc"
+      }
+    },
+    {
       "identity" : "combine-schedulers",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/pointfreeco/combine-schedulers",
       "state" : {
         "revision" : "0625932976b3ae23949f6b816d13bd97f3b40b7c",
         "version" : "0.10.0"
+      }
+    },
+    {
+      "identity" : "lumos",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/JackYoustra/lumos",
+      "state" : {
+        "branch" : "master",
+        "revision" : "3515cd2d2053d8974b6abe665ae25b3f3939ddb4"
       }
     },
     {

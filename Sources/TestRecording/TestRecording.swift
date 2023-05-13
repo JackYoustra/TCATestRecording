@@ -82,6 +82,20 @@ public struct ReplayRecord<State: Decodable, Action: Decodable>: Decodable {
     }
 }
 
-extension ReplayRecord: Equatable where State: Equatable, Action: Equatable {}
+extension ReplayRecord: Equatable where State: Equatable, Action: Equatable {
+    @MainActor
+    func test<Reducer: ReducerProtocol<State, Action>>(_ reducer: Reducer, file: StaticString = #file, line: UInt = #line) {
+        let store = TestStore(
+            initialState: start,
+            reducer: reducer
+        )
+        
+        for quantum in quantums {
+            store.send(quantum.action, assert: {
+                $0 = quantum.result
+            }, file: file, line: line)
+        }
+    }
+}
 
 extension ReplayQuantum: Equatable where State: Equatable, Action: Equatable {}

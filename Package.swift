@@ -19,6 +19,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/pointfreeco/swift-composable-architecture", from: "0.53.0"),
         .package(url: "https://github.com/apple/swift-algorithms", from: "1.0.0"),
+        .package(url: "https://github.com/JackYoustra/lumos", branch: "master"),
     ],
     targets: [
         .target(
@@ -30,7 +31,10 @@ let package = Package(
         ),
         .testTarget(
             name: "TestRecordingTests",
-            dependencies: ["TestRecording"]
+            dependencies: [
+                "TestRecording",
+                .product(name: "Lumos", package: "lumos"),
+            ]
         ),
     ]
 )
