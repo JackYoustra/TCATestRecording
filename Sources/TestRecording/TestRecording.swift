@@ -6,8 +6,9 @@ import AsyncAlgorithms
 extension OutputStream {
     func write(_ data: Data) {
         data.withUnsafeBytes { buffer in
+            print("Buffer count is \(buffer.count)")
             let pointer = buffer.bindMemory(to: UInt8.self)
-            write(pointer.baseAddress!, maxLength: buffer.count)
+            assert(write(pointer.baseAddress!, maxLength: buffer.count) == buffer.count)
         }
     }
 }
@@ -203,14 +204,26 @@ extension ReplayRecord: Equatable where State: Equatable, Action: Equatable {
     }
 }
 
+class UncheckedIsFirst {
+    var isFirst: Bool = true
+}
+
 public actor SharedThing<State: Encodable, Action: Encodable> {
     public typealias LogEntry = LogMessage<State, Action>
     let outputStream: OutputStream
     private let send: AsyncStream<LogEntry>.Continuation
     let stream: AsyncStream<LogEntry>
+    nonisolated let uncheckedIsFirst = UncheckedIsFirst()
     
     nonisolated public func submit(_ entry: LogEntry) {
         send.yield(entry)
+    }
+    
+    let waiter: ActorIsolated<()> = .init(())
+    
+    func waitToFinish() async {
+        send.finish()
+        _ = await waiter.value
     }
     
     init(url: URL, options: JSONEncoder.OutputFormatting? = nil) {
@@ -233,19 +246,16 @@ public actor SharedThing<State: Encodable, Action: Encodable> {
         
         // writer task, detatcheded but implicitly tied to stream
         Task(priority: .background) {
-            for await entry in merge(stream, sReplayQ.stream.map { .dependency(.setRNG($0.value as! UInt64)) }) {
-                print("Entry is \(entry)")
-                // Encode in background
-                entry.write(to: outputStream, with: encoder)
+            await waiter.withValue { _ in
+                for await entry in merge(stream, sReplayQ.stream.map { .dependency(.setRNG($0.value as! UInt64)) }) {
+                    print("Entry is \(entry)")
+                    // Encode in background
+                    entry.write(to: outputStream, with: encoder)
+                }
+                // TODO: Await the task list finishing? Can't think of a a way to do that...
+                outputStream.close()
             }
-            // TODO: Await the task list finishing? Can't think of a a way to do that...
-            outputStream.close()
         }
-    }
-    
-    deinit {
-        fatalError()
-        send.finish()
     }
 }
 
@@ -255,6 +265,10 @@ extension ReplayAction: Equatable where State: Equatable, Action: Equatable {}
 extension ReducerProtocol where State: Encodable, Action: Encodable {
     public func record(to url: URL, options: JSONEncoder.OutputFormatting? = nil) -> _RecordReducer<Self> {
         _RecordReducer(base: self, submitter: SharedThing<State, Action>.init(url: url, options: options))
+    }
+    
+    public func record(with submitter: SharedThing<State, Action>) -> _RecordReducer<Self> {
+        _RecordReducer(base: self, submitter: submitter)
     }
 }
 
@@ -271,12 +285,17 @@ public struct _RecordReducer<Base: ReducerProtocol>: ReducerProtocol where Base.
     self.submitter = submitter
   }
 
-  @inlinable
+//  @inlinable
   public func reduce(
     into state: inout Base.State, action: Base.Action
   ) -> EffectTask<Base.Action> {
     #if DEBUG
       if let submitter = self.submitter {
+          if submitter.uncheckedIsFirst.isFirst {
+              // Submit initial state. Would be great to if-gate!
+              submitter.submit(.state(state))
+              submitter.uncheckedIsFirst.isFirst = false
+          }
         // Submit action
         submitter.submit(.action(action))
         let effects = self.base.reduce(into: &state, action: action)

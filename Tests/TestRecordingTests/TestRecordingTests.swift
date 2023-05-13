@@ -54,11 +54,12 @@ class TestRecordingTests: XCTestCase {
         let logLocation = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("test.log")
         for optionSet in [[], JSONEncoder.OutputFormatting.prettyPrinted] {
+            let submitter = SharedThing<AppReducer.State, AppReducer.Action>(url: logLocation, options: optionSet)
             let store = TestStore(
                 initialState: AppReducer.State(),
                 reducer: AppReducer()
                     .wrapReducerDependency()
-                    .record(to: logLocation, options: optionSet)
+                    .record(with: submitter)
 //                    ._printChanges(.replayWriter(url: logLocation, options: optionSet))
             )
             await store.send(.increment) {
@@ -68,6 +69,10 @@ class TestRecordingTests: XCTestCase {
             await store.send(.increment) {
                 $0.count = 2
             }
+            
+            await submitter.waitToFinish()
+            
+            try await Task.sleep(nanoseconds: NSEC_PER_SEC)
             
             // Assert contents at test.log matches "hi"
             let data = try ReplayRecordOf<AppReducer>(url: logLocation)
