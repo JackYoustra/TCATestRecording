@@ -2,6 +2,15 @@ import XCTest
 import ComposableArchitecture
 @testable import TestRecording
 
+struct SequentialRNG: RandomNumberGenerator {
+    var count = UInt64(0)
+    mutating func next() -> UInt64 {
+        defer { count += 1 }
+        print("Count is \(count)")
+        return count
+    }
+}
+
 struct AppReducer: ReducerProtocol {
     struct State: Equatable, Codable {
         var count: Int
@@ -13,13 +22,23 @@ struct AppReducer: ReducerProtocol {
 
     enum Action: Equatable, Codable {
         case increment
+        case setCount(Int)
+        case randomizeCount
     }
+    
+    @Dependency(\.withRandomNumberGenerator) var rng
 
     var body: some ReducerProtocolOf<Self> {
         Reduce { state, action in
             switch action {
             case .increment:
                 state.count += 1
+                return .none
+            case .setCount(let count):
+                state.count = count
+                return .none
+            case .randomizeCount:
+                state.count = rng { Int(truncatingIfNeeded: $0.next()) }
                 return .none
             }
         }
@@ -75,5 +94,30 @@ class TestRecordingTests: XCTestCase {
                 }
             }
         }
+    }
+    
+    func testRandomized() throws {
+        let logLocation = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("test.log")
+        let store = TestStore(
+            initialState: AppReducer.State(),
+            reducer: AppReducer()
+                .dependency(\.withRandomNumberGenerator, .init(SequentialRNG()))
+                ._printChanges(.replayWriter(url: logLocation))
+        )
+        store.send(.increment) { $0.count = 1 }
+        store.send(.randomizeCount) { $0.count = 0 }
+        store.send(.randomizeCount) { $0.count = 1 }
+        store.send(.randomizeCount) { $0.count = 2 }
+        let data = try ReplayRecordOf<AppReducer>(url: logLocation)
+        let expected = ReplayRecordOf<AppReducer>(start: .init(count: 0), quantums: [
+            .init(action: .increment, result: .init(count: 1)),
+            .init(action: .randomizeCount, result: .init(count: 0)),
+            .init(action: .randomizeCount, result: .init(count: 1)),
+            .init(action: .randomizeCount, result: .init(count: 2)),
+        ])
+        XCTAssertNoDifference(expected, data)
+        
+        data.test(AppReducer())
     }
 }
