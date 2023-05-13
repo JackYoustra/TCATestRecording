@@ -12,43 +12,20 @@ extension OutputStream {
     }
 }
 
-struct ReplayQ<T> {
-    struct Entry {
-        let key: Any
-        let value: T
-    }
-    
-    var send: AsyncStream<Entry>.Continuation
-    var stream: AsyncStream<Entry>
-    
-    func submit(_ key: Any, _ value: T) {
-        send.yield(Entry(key: key, value: value))
-    }
-    
-    init() {
-        var c: AsyncStream<Entry>.Continuation! = nil
-        let asyncQueue = AsyncStream(Entry.self, bufferingPolicy: .unbounded, {
-            c = $0
-        })
-        send = c
-        stream = asyncQueue
-    }
-}
-
-let sReplayQ = ReplayQ<Any>()
-
 struct RecordedRNG: RandomNumberGenerator {
     let isolatedInner: WithRandomNumberGenerator
+    let submission: (UInt64) -> ()
     
-    init(_ wrng: WithRandomNumberGenerator) {
+    init(_ wrng: WithRandomNumberGenerator, submission: @escaping (UInt64) -> ()) {
         isolatedInner = wrng
+        self.submission = submission
     }
     
     func next() -> UInt64 {
         var num: UInt64! = nil
         isolatedInner { rng in
             num = rng.next()
-            sReplayQ.submit(RecordedRNG.self, num!)
+            submission(num)
         }
         return num
     }
@@ -74,22 +51,6 @@ struct SingleRNG: RandomNumberGenerator {
             n = nil
         }
         return n!
-    }
-}
-
-extension ReducerProtocol {
-    func wrapReducerDependency() -> _DependencyKeyWritingReducer<Self> {
-        self.transformDependency(\.self) { deps in
-            deps.withRandomNumberGenerator = .init(RecordedRNG(deps.withRandomNumberGenerator))
-            
-        }
-    }
-    
-    func injectRecordedDependency() -> _DependencyKeyWritingReducer<Self> {
-        self.transformDependency(\.self) { deps in
-            deps.withRandomNumberGenerator = .init(RecordedRNG(deps.withRandomNumberGenerator))
-            
-        }
     }
 }
 
@@ -222,7 +183,6 @@ public actor SharedThing<State: Encodable, Action: Encodable> {
     
     func waitToFinish() async {
         send.finish()
-        sReplayQ.send.finish()
         _ = await waiter.value
     }
     
@@ -246,7 +206,7 @@ public actor SharedThing<State: Encodable, Action: Encodable> {
         
         // writer task, detatcheded but implicitly tied to stream
         waiter = Task(priority: .background) {
-            for await entry in merge(stream, sReplayQ.stream.map { .dependency(.setRNG($0.value as! UInt64)) }) {
+            for await entry in stream {
                 print("Entry is \(entry)")
                 // Encode in background
                 entry.write(to: outputStream, with: encoder)
@@ -295,7 +255,11 @@ public struct _RecordReducer<Base: ReducerProtocol>: ReducerProtocol where Base.
           }
         // Submit action
         submitter.submit(.action(action))
-        let effects = self.base.reduce(into: &state, action: action)
+          let effects = withDependencies { values in
+              values.withRandomNumberGenerator = .init(RecordedRNG(values.withRandomNumberGenerator, submission: { submitter.submit(.dependency(.setRNG($0))) }))
+          } operation: {
+              self.base.reduce(into: &state, action: action)
+          }
         // Need to be synchronous or else may be out of order! Try to keep to fast path
         // Submit new state
         submitter.submit(.state(state))

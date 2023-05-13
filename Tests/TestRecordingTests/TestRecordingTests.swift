@@ -57,9 +57,7 @@ class TestRecordingTests: XCTestCase {
             let store = TestStore(
                 initialState: AppReducer.State(),
                 reducer: AppReducer()
-                    .wrapReducerDependency()
                     .record(with: submitter)
-//                    ._printChanges(.replayWriter(url: logLocation, options: optionSet))
             )
             await store.send(.increment) {
                 $0.count = 1
@@ -110,10 +108,8 @@ class TestRecordingTests: XCTestCase {
         let store = TestStore(
             initialState: AppReducer.State(),
             reducer: AppReducer()
-                .wrapReducerDependency()
-                .dependency(\.withRandomNumberGenerator, .init(SequentialRNG()))
-//                ._printChanges(.replayWriter(url: logLocation))
                 .record(with: submitter)
+                .dependency(\.withRandomNumberGenerator, .init(SequentialRNG()))
         )
         await store.send(.increment) { $0.count = 1 }
         await store.send(.randomizeCount) { $0.count = 0 }
@@ -132,7 +128,7 @@ class TestRecordingTests: XCTestCase {
         ])
         print(dump(data))
         XCTAssertNoDifference(expected, data)
-        
-//        data.test(AppReducer())
+
+        data.test(AppReducer())
     }
 }
