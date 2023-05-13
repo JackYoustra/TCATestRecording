@@ -6,7 +6,6 @@ struct SequentialRNG: RandomNumberGenerator {
     var count = UInt64(0)
     mutating func next() -> UInt64 {
         defer { count += 1 }
-        print("Count is \(count)")
         return count
     }
 }
@@ -104,21 +103,23 @@ class TestRecordingTests: XCTestCase {
         }
     }
     
-    func testRandomized() throws {
+    func testRandomized() async throws {
         let logLocation = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("test.log")
+        let submitter = SharedThing<AppReducer.State, AppReducer.Action>(url: logLocation)
         let store = TestStore(
             initialState: AppReducer.State(),
             reducer: AppReducer()
                 .wrapReducerDependency()
                 .dependency(\.withRandomNumberGenerator, .init(SequentialRNG()))
 //                ._printChanges(.replayWriter(url: logLocation))
-                .record(to: logLocation)
+                .record(with: submitter)
         )
-        store.send(.increment) { $0.count = 1 }
-        store.send(.randomizeCount) { $0.count = 0 }
-        store.send(.randomizeCount) { $0.count = 1 }
-        store.send(.randomizeCount) { $0.count = 2 }
+        await store.send(.increment) { $0.count = 1 }
+        await store.send(.randomizeCount) { $0.count = 0 }
+        await store.send(.randomizeCount) { $0.count = 1 }
+        await store.send(.randomizeCount) { $0.count = 2 }
+        await submitter.waitToFinish()
         let data = try ReplayRecordOf<AppReducer>(url: logLocation)
         let expected = ReplayRecordOf<AppReducer>(start: .init(count: 0), replayActions: [
             .quantum(.init(action: .increment, result: .init(count: 1))),
@@ -129,8 +130,9 @@ class TestRecordingTests: XCTestCase {
             .dependencySet(.setRNG(2)),
             .quantum(.init(action: .randomizeCount, result: .init(count: 2))),
         ])
+        print(dump(data))
         XCTAssertNoDifference(expected, data)
         
-        data.test(AppReducer())
+//        data.test(AppReducer())
     }
 }

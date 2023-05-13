@@ -6,7 +6,6 @@ import AsyncAlgorithms
 extension OutputStream {
     func write(_ data: Data) {
         data.withUnsafeBytes { buffer in
-            print("Buffer count is \(buffer.count)")
             let pointer = buffer.bindMemory(to: UInt8.self)
             assert(write(pointer.baseAddress!, maxLength: buffer.count) == buffer.count)
         }
@@ -252,7 +251,6 @@ public actor SharedThing<State: Encodable, Action: Encodable> {
                 // Encode in background
                 entry.write(to: outputStream, with: encoder)
             }
-            // TODO: Await the task list finishing? Can't think of a a way to do that...
             outputStream.close()
         }
     }
