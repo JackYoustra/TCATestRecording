@@ -11,6 +11,69 @@ extension OutputStream {
     }
 }
 
+struct ReplayQ<T> {
+    struct Entry {
+        let key: Any
+        let value: T
+    }
+    
+    private var send: AsyncStream<Entry>.Continuation
+    var stream: AsyncStream<Entry>
+    
+    func submit(_ key: Any, _ value: T) {
+        send.yield(Entry(key: key, value: value))
+    }
+    
+    init() {
+        var c: AsyncStream<Entry>.Continuation! = nil
+        let asyncQueue = AsyncStream(Entry.self, bufferingPolicy: .unbounded, {
+            c = $0
+        })
+        send = c
+        stream = asyncQueue
+    }
+}
+
+let sReplayQ = ReplayQ<Any>()
+
+protocol RecordedDependency {
+    // Take a list of functions, make every function do what they were going to do,
+    // but also send their value to sReplayQ
+    typealias FunctionToSetType = (Any) -> (Any)
+    typealias SettingType = ((_ q: inout FunctionToSetType) -> ())
+    mutating func record() -> [(SettingType) -> ()]
+    
+    func eventStream() -> [AsyncStream<Any>]
+}
+
+func recordDependency<T: RecordedDependency>(_ value: inout T) {
+    for setter in value.record() {
+        setter { (functionToSet: inout T.FunctionToSetType) in
+            let swappedfunction = functionToSet
+            functionToSet = { originalArg in
+                let value = swappedfunction(originalArg)
+                sReplayQ.submit(originalArg, value)
+                return value
+            }
+        }
+    }
+}
+
+extension ReducerProtocol {
+    func wrapReducerDependency() -> _DependencyKeyWritingReducer<Self> {
+        self.transformDependency(\.self) { deps in
+            // mirror deps
+            let mirror = Mirror(reflecting: deps)
+            for child in mirror.children {
+                // implicit key: mirror.name
+                // value generated to... stream?? global??
+//                (deps[keyPath: child] as? RecordedDependency)?.record()
+//                deps[keyPath: child] = deps[keyPath: child]
+            }
+        }
+    }
+}
+
 public extension _ReducerPrinter where State: Encodable, Action: Encodable  {
     static func replayWriter(url: URL, options: JSONEncoder.OutputFormatting? = nil) -> Self {
         var isFirst = true
@@ -25,6 +88,13 @@ public extension _ReducerPrinter where State: Encodable, Action: Encodable  {
         let encoder = JSONEncoder()
         if let options {
             encoder.outputFormatting = options
+        }
+        
+        // dependency time
+        Task {
+            for await dependencySend in sReplayQ.stream {
+                
+            }
         }
         
         return Self { action, oldState, newState in
