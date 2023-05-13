@@ -1,7 +1,6 @@
 import XCTest
 import ComposableArchitecture
 @testable import TestRecording
-import Lumos
 
 struct AppReducer: ReducerProtocol {
     struct State: Equatable, Codable {
@@ -69,45 +68,12 @@ class TestRecordingTests: XCTestCase {
                     .init(action: .increment, result: .init(count: 2)),
                 ]),
             ]
-
+            
             for fail in fails {
                 ignoreIssueResilient {
                     fail.test(AppReducer())
                 }
             }
         }
-    }
-    
-    func testFailureWorkaround() {
-        ignoreIssueResilient {
-            
-        }
-    }
-    
-    func testFailureWorkaroundWithFailure() {
-        XCTExpectFailure {
-            XCTFail("uwu")
-        }
-        ignoreIssueResilient {
-            XCTFail("owo")
-        }
-        XCTExpectFailure {
-            XCTFail("ewe")
-        }
-    }
-}
-
-extension XCTestCase {
-    func ignoreIssueResilient(_ execute: () throws -> ()) rethrows {
-        Lumos.swizzle(type: .instance, originalClass: XCTestCase.self, originalSelector: NSSelectorFromString("_recordIssue:"), swizzledClass: TestRecordingDummyStore.self, swizzledSelector: #selector(TestRecordingDummyStore._recordIssue(_:)))
-        defer {
-            Lumos.swizzle(type: .instance, originalClass: XCTestCase.self, originalSelector: NSSelectorFromString("_recordIssue:"), swizzledClass: TestRecordingDummyStore.self, swizzledSelector: #selector(TestRecordingDummyStore._recordIssue(_:)))
-        }
-        try execute()
-    }
-}
-
-private class TestRecordingDummyStore: NSObject {
-    @objc dynamic func _recordIssue(_ issue: XCTIssue) {
     }
 }
