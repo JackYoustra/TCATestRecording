@@ -108,7 +108,7 @@ class TestRecordingTests: XCTestCase {
             reducer: AppReducer()
                 .wrapReducerDependency()
                 .dependency(\.withRandomNumberGenerator, .init(SequentialRNG()))
-                ._printChanges(.replayWriter(url: logLocation))
+//                ._printChanges(.replayWriter(url: logLocation))
         )
         store.send(.increment) { $0.count = 1 }
         store.send(.randomizeCount) { $0.count = 0 }
@@ -117,7 +117,9 @@ class TestRecordingTests: XCTestCase {
         let data = try ReplayRecordOf<AppReducer>(url: logLocation)
         let expected = ReplayRecordOf<AppReducer>(start: .init(count: 0), replayActions: [
             .quantum(.init(action: .increment, result: .init(count: 1))),
+            .dependencySet(.setRNG(0)),
             .quantum(.init(action: .randomizeCount, result: .init(count: 0))),
+            .dependencySet(.setRNG(1)),
             .quantum(.init(action: .randomizeCount, result: .init(count: 1))),
             .dependencySet(.setRNG(2)),
             .quantum(.init(action: .randomizeCount, result: .init(count: 2))),

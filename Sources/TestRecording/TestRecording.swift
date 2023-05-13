@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import Algorithms
+import AsyncAlgorithms
 
 extension OutputStream {
     func write(_ data: Data) {
@@ -35,31 +36,6 @@ struct ReplayQ<T> {
 }
 
 let sReplayQ = ReplayQ<Any>()
-
-protocol RecordedDependency {
-    // Take a list of functions, make every function do what they were going to do,
-    // but also send their value to sReplayQ
-    typealias FunctionToSetType = (Any) -> (Any)
-    typealias SettingType = ((_ q: inout FunctionToSetType) -> ())
-//    mutating func record() -> [(SettingType) -> ()]
-    
-//    func eventStream() -> [AsyncStream<Any>]
-    
-    func apply() -> Self
-}
-
-//func recordDependency<T: RecordedDependency>(_ value: inout T) {
-//    for setter in value.record() {
-//        setter { (functionToSet: inout T.FunctionToSetType) in
-//            let swappedfunction = functionToSet
-//            functionToSet = { originalArg in
-//                let value = swappedfunction(originalArg)
-//                sReplayQ.submit(originalArg, value)
-//                return value
-//            }
-//        }
-//    }
-//}
 
 struct RecordedRNG: RandomNumberGenerator {
     let isolatedInner: WithRandomNumberGenerator
@@ -101,12 +77,6 @@ struct SingleRNG: RandomNumberGenerator {
     }
 }
 
-extension WithRandomNumberGenerator: RecordedDependency {
-    func apply() -> Self {
-        Self.init(RecordedRNG(self))
-    }
-}
-
 extension ReducerProtocol {
     func wrapReducerDependency() -> _DependencyKeyWritingReducer<Self> {
         self.transformDependency(\.self) { deps in
@@ -127,7 +97,7 @@ public enum DependencyAction: Codable, Equatable {
     case setRNG(UInt64)
 }
 
-enum LogMessage<State, Action> {
+public enum LogMessage<State, Action> {
     case state(State)
     case action(Action)
     case dependency(DependencyAction)
@@ -161,9 +131,7 @@ public extension _ReducerPrinter where State: Encodable, Action: Encodable  {
         if let options {
             encoder.outputFormatting = options
         }
-        
-        let depString = "DEP:"
-        
+                
         // dependency time
         Task {
             for await entry in sReplayQ.stream {
@@ -285,5 +253,83 @@ extension ReplayRecord: Equatable where State: Equatable, Action: Equatable {
     }
 }
 
+public actor SharedThing<State: Encodable, Action: Encodable> {
+    public typealias LogEntry = LogMessage<State, Action>
+    let outputStream: OutputStream
+    private let send: AsyncStream<LogEntry>.Continuation
+    let stream: AsyncStream<LogEntry>
+    
+    nonisolated public func submit(_ entry: LogEntry) {
+        send.yield(entry)
+    }
+    
+    init(url: URL, options: JSONEncoder.OutputFormatting? = nil) {
+        var c: AsyncStream<LogEntry>.Continuation! = nil
+        let asyncQueue = AsyncStream(LogEntry.self, bufferingPolicy: .unbounded, {
+            c = $0
+        })
+        send = c
+        stream = asyncQueue
+        
+        guard let outputStream = OutputStream(url: url, append: false) else {
+            fatalError("Unable to create file")
+        }
+        self.outputStream = outputStream
+        outputStream.open()
+        let encoder = JSONEncoder()
+        if let options {
+            encoder.outputFormatting = options
+        }
+        
+        // writer task, detatcheded but implicitly tied to stream
+        Task(priority: .background) {
+            for await entry in merge(stream, sReplayQ.stream.map { .dependency(.setRNG($0.value as! UInt64)) }) {
+                print("Entry is \(entry)")
+                // Encode in background
+                entry.write(to: outputStream, with: encoder)
+            }
+            // TODO: Await the task list finishing? Can't think of a a way to do that...
+            outputStream.close()
+        }
+    }
+    
+    deinit {
+        fatalError()
+        send.finish()
+    }
+}
+
 extension ReplayQuantum: Equatable where State: Equatable, Action: Equatable {}
 extension ReplayAction: Equatable where State: Equatable, Action: Equatable {}
+
+public struct _RecordReducer<Base: ReducerProtocol>: ReducerProtocol where Base.State: Encodable, Base.Action: Encodable {
+  @usableFromInline
+  let base: Base
+
+  @usableFromInline
+    let submitter: SharedThing<Base.State, Base.Action>?
+
+  @usableFromInline
+  init(base: Base, submitter: SharedThing<Base.State, Base.Action>?) {
+    self.base = base
+    self.submitter = submitter
+  }
+
+  @inlinable
+  public func reduce(
+    into state: inout Base.State, action: Base.Action
+  ) -> EffectTask<Base.Action> {
+    #if DEBUG
+      if let submitter = self.submitter {
+        // Submit action
+        submitter.submit(.action(action))
+        let effects = self.base.reduce(into: &state, action: action)
+        // Need to be synchronous or else may be out of order! Try to keep to fast path
+        // Submit new state
+        submitter.submit(.state(state))
+        return effects
+      }
+    #endif
+    return self.base.reduce(into: &state, action: action)
+  }
+}
