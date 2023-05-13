@@ -38,7 +38,9 @@ struct AppReducer: ReducerProtocol {
                 state.count = count
                 return .none
             case .randomizeCount:
-                state.count = rng { Int(truncatingIfNeeded: $0.next()) }
+                state.count = rng {
+                    Int(truncatingIfNeeded: $0.next())
+                }
                 return .none
             }
         }
@@ -65,11 +67,12 @@ class TestRecordingTests: XCTestCase {
             await store.send(.increment) {
                 $0.count = 2
             }
+            
             // Assert contents at test.log matches "hi"
             let data = try ReplayRecordOf<AppReducer>(url: logLocation)
-            let expected = ReplayRecordOf<AppReducer>(start: .init(count: 0), quantums: [
-                .init(action: .increment, result: .init(count: 1)),
-                .init(action: .increment, result: .init(count: 2)),
+            let expected = ReplayRecordOf<AppReducer>(start: .init(count: 0), replayActions: [
+                .quantum(.init(action: .increment, result: .init(count: 1))),
+                .quantum(.init(action: .increment, result: .init(count: 2))),
             ])
             XCTAssertNoDifference(expected, data)
             
@@ -78,14 +81,14 @@ class TestRecordingTests: XCTestCase {
             
             // Make sure the tests don't pass if they shouldn't
             let fails: [ReplayRecordOf<AppReducer>] = [
-                .init(start: .init(count: 0), quantums: []),
-                .init(start: .init(count: 1), quantums: [
-                    .init(action: .increment, result: .init(count: 1)),
-                    .init(action: .increment, result: .init(count: 2)),
+                .init(start: .init(count: 0), replayActions: []),
+                .init(start: .init(count: 1), replayActions: [
+                    .quantum(.init(action: .increment, result: .init(count: 1))),
+                             .quantum(.init(action: .increment, result: .init(count: 2))),
                 ]),
-                .init(start: .init(count: 0), quantums: [
-                    .init(action: .increment, result: .init(count: 2)),
-                    .init(action: .increment, result: .init(count: 2)),
+                .init(start: .init(count: 0), replayActions: [
+                    .quantum(.init(action: .increment, result: .init(count: 2))),
+                             .quantum(.init(action: .increment, result: .init(count: 2))),
                 ]),
             ]
             
@@ -103,6 +106,7 @@ class TestRecordingTests: XCTestCase {
         let store = TestStore(
             initialState: AppReducer.State(),
             reducer: AppReducer()
+                .wrapReducerDependency()
                 .dependency(\.withRandomNumberGenerator, .init(SequentialRNG()))
                 ._printChanges(.replayWriter(url: logLocation))
         )
@@ -111,11 +115,12 @@ class TestRecordingTests: XCTestCase {
         store.send(.randomizeCount) { $0.count = 1 }
         store.send(.randomizeCount) { $0.count = 2 }
         let data = try ReplayRecordOf<AppReducer>(url: logLocation)
-        let expected = ReplayRecordOf<AppReducer>(start: .init(count: 0), quantums: [
-            .init(action: .increment, result: .init(count: 1)),
-            .init(action: .randomizeCount, result: .init(count: 0)),
-            .init(action: .randomizeCount, result: .init(count: 1)),
-            .init(action: .randomizeCount, result: .init(count: 2)),
+        let expected = ReplayRecordOf<AppReducer>(start: .init(count: 0), replayActions: [
+            .quantum(.init(action: .increment, result: .init(count: 1))),
+            .quantum(.init(action: .randomizeCount, result: .init(count: 0))),
+            .quantum(.init(action: .randomizeCount, result: .init(count: 1))),
+            .dependencySet(.setRNG(2)),
+            .quantum(.init(action: .randomizeCount, result: .init(count: 2))),
         ])
         XCTAssertNoDifference(expected, data)
         
