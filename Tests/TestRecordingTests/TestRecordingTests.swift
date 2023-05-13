@@ -58,7 +58,8 @@ class TestRecordingTests: XCTestCase {
                 initialState: AppReducer.State(),
                 reducer: AppReducer()
                     .wrapReducerDependency()
-                    ._printChanges(.replayWriter(url: logLocation, options: optionSet))
+                    .record(to: logLocation, options: optionSet)
+//                    ._printChanges(.replayWriter(url: logLocation, options: optionSet))
             )
             await store.send(.increment) {
                 $0.count = 1
@@ -109,6 +110,7 @@ class TestRecordingTests: XCTestCase {
                 .wrapReducerDependency()
                 .dependency(\.withRandomNumberGenerator, .init(SequentialRNG()))
 //                ._printChanges(.replayWriter(url: logLocation))
+                .record(to: logLocation)
         )
         store.send(.increment) { $0.count = 1 }
         store.send(.randomizeCount) { $0.count = 0 }

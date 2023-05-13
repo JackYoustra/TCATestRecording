@@ -113,56 +113,6 @@ extension LogMessage: Encodable where State: Encodable, Action: Encodable {
 
 extension LogMessage: Decodable where State: Decodable, Action: Decodable {}
 
-public extension _ReducerPrinter where State: Encodable, Action: Encodable  {
-    internal typealias LogEntry = LogMessage<State, Action>
-    
-    static func replayWriter(url: URL, options: JSONEncoder.OutputFormatting? = nil) -> Self {
-        var isFirst = true
-        // Create a file write stream
-        if FileManager.default.fileExists(atPath: url.path) {
-            try! FileManager.default.removeItem(at: url)
-        }
-        guard let outputStream = OutputStream(url: url, append: false) else {
-            fatalError("Unable to create file")
-        }
-        let lockedOutputStream = LockIsolated(outputStream)
-        outputStream.open()
-        let encoder = JSONEncoder()
-        if let options {
-            encoder.outputFormatting = options
-        }
-                
-        // dependency time
-        Task {
-            for await entry in sReplayQ.stream {
-                print("Got entry \(entry)")
-                lockedOutputStream.withValue { outputStream in
-                    LogEntry.dependency(.setRNG(entry.value as! UInt64)).write(to: outputStream, with: encoder)
-                }
-            }
-        }
-        
-        return Self { action, oldState, newState in
-            lockedOutputStream.withValue { outputStream in
-                if isFirst {
-                    // encode oldState as the initial state
-                    LogEntry.state(oldState)
-                        .write(to: outputStream, with: encoder)
-                }
-                isFirst = false
-                // encode action
-                LogEntry.action(action)
-                    .write(to: outputStream, with: encoder)
-                // encode newState
-                LogEntry.state(newState)
-                    .write(to: outputStream, with: encoder)
-            }
-//            defer { outputStream.close() }
-            
-        }
-    }
-}
-
 public typealias ReplayRecordOf<T: ReducerProtocol> = ReplayRecord<T.State, T.Action> where T.State: Decodable, T.Action: Decodable
 
 public enum ReplayAction<State: Decodable, Action: Decodable>: Decodable {
@@ -301,6 +251,12 @@ public actor SharedThing<State: Encodable, Action: Encodable> {
 
 extension ReplayQuantum: Equatable where State: Equatable, Action: Equatable {}
 extension ReplayAction: Equatable where State: Equatable, Action: Equatable {}
+
+extension ReducerProtocol where State: Encodable, Action: Encodable {
+    public func record(to url: URL, options: JSONEncoder.OutputFormatting? = nil) -> _RecordReducer<Self> {
+        _RecordReducer(base: self, submitter: SharedThing<State, Action>.init(url: url, options: options))
+    }
+}
 
 public struct _RecordReducer<Base: ReducerProtocol>: ReducerProtocol where Base.State: Encodable, Base.Action: Encodable {
   @usableFromInline
