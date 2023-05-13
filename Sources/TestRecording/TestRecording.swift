@@ -41,21 +41,45 @@ protocol RecordedDependency {
     // but also send their value to sReplayQ
     typealias FunctionToSetType = (Any) -> (Any)
     typealias SettingType = ((_ q: inout FunctionToSetType) -> ())
-    mutating func record() -> [(SettingType) -> ()]
+//    mutating func record() -> [(SettingType) -> ()]
     
-    func eventStream() -> [AsyncStream<Any>]
+//    func eventStream() -> [AsyncStream<Any>]
+    
+    func apply() -> Self
 }
 
-func recordDependency<T: RecordedDependency>(_ value: inout T) {
-    for setter in value.record() {
-        setter { (functionToSet: inout T.FunctionToSetType) in
-            let swappedfunction = functionToSet
-            functionToSet = { originalArg in
-                let value = swappedfunction(originalArg)
-                sReplayQ.submit(originalArg, value)
-                return value
-            }
+//func recordDependency<T: RecordedDependency>(_ value: inout T) {
+//    for setter in value.record() {
+//        setter { (functionToSet: inout T.FunctionToSetType) in
+//            let swappedfunction = functionToSet
+//            functionToSet = { originalArg in
+//                let value = swappedfunction(originalArg)
+//                sReplayQ.submit(originalArg, value)
+//                return value
+//            }
+//        }
+//    }
+//}
+
+struct RecordedRNG: RandomNumberGenerator {
+    let isolatedInner: WithRandomNumberGenerator
+    
+    init(_ wrng: WithRandomNumberGenerator) {
+        isolatedInner = wrng
+    }
+    
+    func next() -> UInt64 {
+        var num: UInt64! = nil
+        isolatedInner { rng in
+            num = rng.next()
         }
+        return num
+    }
+}
+
+extension WithRandomNumberGenerator: RecordedDependency {
+    func apply() -> Self {
+        Self.init(RecordedRNG(self))
     }
 }
 
@@ -63,13 +87,25 @@ extension ReducerProtocol {
     func wrapReducerDependency() -> _DependencyKeyWritingReducer<Self> {
         self.transformDependency(\.self) { deps in
             // mirror deps
-            let mirror = Mirror(reflecting: deps)
-            for child in mirror.children {
-                // implicit key: mirror.name
-                // value generated to... stream?? global??
-//                (deps[keyPath: child] as? RecordedDependency)?.record()
-//                deps[keyPath: child] = deps[keyPath: child]
-            }
+//            let mirror = Mirror(reflecting: deps)
+//            for child in mirror.children {
+//                // implicit key: mirror.name
+//                // value generated to... stream?? global??
+////                (deps[keyPath: child] as? RecordedDependency)?.record()
+////                deps[keyPath: child] = deps[keyPath: child]
+//                let jjj = child as KeyPath<DependencyValues, Any>
+//                if let writing = child as? WritableKeyPath<DependencyValues, Any> {
+//                    let dep = deps[keyPath: writing]
+//                }
+//            }
+//            assert(_forEachFieldWithKeyPath(of: DependencyValues.self, options: .ignoreUnknown) { (cFieldName, partialKeyPath) in
+//                let fieldName = String(cString: cFieldName)
+//                print(fieldName)
+//                let path = partialKeyPath as! WritableKeyPath<DependencyValues, RecordedDependency>
+//                deps[keyPath: path] = deps[keyPath: path].apply()
+//                return true
+//            })
+            
         }
     }
 }
@@ -92,7 +128,7 @@ public extension _ReducerPrinter where State: Encodable, Action: Encodable  {
         
         // dependency time
         Task {
-            for await dependencySend in sReplayQ.stream {
+            for await entry in sReplayQ.stream {
                 
             }
         }

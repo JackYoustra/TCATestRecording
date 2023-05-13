@@ -55,6 +55,7 @@ class TestRecordingTests: XCTestCase {
             let store = TestStore(
                 initialState: AppReducer.State(),
                 reducer: AppReducer()
+                    .wrapReducerDependency()
                     ._printChanges(.replayWriter(url: logLocation, options: optionSet))
             )
             await store.send(.increment) {
