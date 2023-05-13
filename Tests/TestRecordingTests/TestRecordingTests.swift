@@ -1,5 +1,5 @@
 import XCTest
-import ComposableArchitecture
+@_spi(Internals) import ComposableArchitecture
 @testable import TestRecording
 
 struct SequentialRNG: RandomNumberGenerator {
@@ -71,9 +71,7 @@ class TestRecordingTests: XCTestCase {
             }
             
             await submitter.waitToFinish()
-            
-            try await Task.sleep(nanoseconds: NSEC_PER_SEC)
-            
+
             // Assert contents at test.log matches "hi"
             let data = try ReplayRecordOf<AppReducer>(url: logLocation)
             let expected = ReplayRecordOf<AppReducer>(start: .init(count: 0), replayActions: [

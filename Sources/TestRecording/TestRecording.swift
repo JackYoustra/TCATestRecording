@@ -19,7 +19,7 @@ struct ReplayQ<T> {
         let value: T
     }
     
-    private var send: AsyncStream<Entry>.Continuation
+    var send: AsyncStream<Entry>.Continuation
     var stream: AsyncStream<Entry>
     
     func submit(_ key: Any, _ value: T) {
@@ -219,10 +219,11 @@ public actor SharedThing<State: Encodable, Action: Encodable> {
         send.yield(entry)
     }
     
-    let waiter: ActorIsolated<()> = .init(())
+    var waiter: Task<(), Never>! = nil
     
     func waitToFinish() async {
         send.finish()
+        sReplayQ.send.finish()
         _ = await waiter.value
     }
     
@@ -245,16 +246,14 @@ public actor SharedThing<State: Encodable, Action: Encodable> {
         }
         
         // writer task, detatcheded but implicitly tied to stream
-        Task(priority: .background) {
-            await waiter.withValue { _ in
-                for await entry in merge(stream, sReplayQ.stream.map { .dependency(.setRNG($0.value as! UInt64)) }) {
-                    print("Entry is \(entry)")
-                    // Encode in background
-                    entry.write(to: outputStream, with: encoder)
-                }
-                // TODO: Await the task list finishing? Can't think of a a way to do that...
-                outputStream.close()
+        waiter = Task(priority: .background) {
+            for await entry in merge(stream, sReplayQ.stream.map { .dependency(.setRNG($0.value as! UInt64)) }) {
+                print("Entry is \(entry)")
+                // Encode in background
+                entry.write(to: outputStream, with: encoder)
             }
+            // TODO: Await the task list finishing? Can't think of a a way to do that...
+            outputStream.close()
         }
     }
 }
