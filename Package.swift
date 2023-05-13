@@ -12,8 +12,8 @@ let package = Package(
     ],
     products: [
         .library(
-            name: "tca-test-recording",
-            targets: ["tca-test-recording"]
+            name: "TestRecording",
+            targets: ["TestRecording"]
         ),
     ],
     dependencies: [
@@ -22,15 +22,15 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "tca-test-recording",
+            name: "TestRecording",
             dependencies: [
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "Algorithms", package: "swift-algorithms"),
             ]
         ),
         .testTarget(
-            name: "tca-test-recordingTests",
-            dependencies: ["tca-test-recording"]
+            name: "TestRecordingTests",
+            dependencies: ["TestRecording"]
         ),
     ]
 )
