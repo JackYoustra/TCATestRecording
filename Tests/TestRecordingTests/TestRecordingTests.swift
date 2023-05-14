@@ -53,7 +53,7 @@ class TestRecordingTests: XCTestCase {
         let logLocation = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("test.log")
         for optionSet in [[], JSONEncoder.OutputFormatting.prettyPrinted] {
-            let submitter = await SharedThing<AppReducer.State, AppReducer.Action>(url: logLocation, options: optionSet)
+            let submitter = await SharedThing<AppReducer.State, AppReducer.Action, NeverCodable>(url: logLocation, options: optionSet)
             let store = TestStore(
                 initialState: AppReducer.State(),
                 reducer: AppReducer()
@@ -70,8 +70,8 @@ class TestRecordingTests: XCTestCase {
             await submitter.waitToFinish()
 
             // Assert contents at test.log matches "hi"
-            let data = try ReplayRecordOf<AppReducer>(url: logLocation)
-            let expected = ReplayRecordOf<AppReducer>(start: .init(count: 0), replayActions: [
+            let data = try ReplayRecordOf<AppReducer, NeverCodable>(url: logLocation)
+            let expected = ReplayRecordOf<AppReducer, NeverCodable>(start: .init(count: 0), replayActions: [
                 .quantum(.init(action: .increment, result: .init(count: 1))),
                 .quantum(.init(action: .increment, result: .init(count: 2))),
             ])
@@ -81,7 +81,7 @@ class TestRecordingTests: XCTestCase {
             data.test(AppReducer())
             
             // Make sure the tests don't pass if they shouldn't
-            let fails: [ReplayRecordOf<AppReducer>] = [
+            let fails: [ReplayRecordOf<AppReducer, NeverCodable>] = [
                 .init(start: .init(count: 1), replayActions: [
                     .quantum(.init(action: .increment, result: .init(count: 1))),
                              .quantum(.init(action: .increment, result: .init(count: 2))),
@@ -100,14 +100,27 @@ class TestRecordingTests: XCTestCase {
         }
     }
     
+    public enum DependencyAction: Codable, Equatable, DependencyOneUseSetting {
+        case setRNG(UInt64)
+
+        func resetDependency(on deps: inout Dependencies.DependencyValues) {
+            switch self {
+            case let .setRNG(rn):
+                deps.withRandomNumberGenerator = .init(SingleRNG(n: rn))
+            }
+        }
+    }
+    
     func testRandomized() async throws {
         let logLocation = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("test.log")
-        let submitter = await SharedThing<AppReducer.State, AppReducer.Action>(url: logLocation)
+        let submitter = await SharedThing<AppReducer.State, AppReducer.Action, DependencyAction>(url: logLocation)
         let store = TestStore(
             initialState: AppReducer.State(),
             reducer: AppReducer()
-                .record(with: submitter)
+                .record(with: submitter) { values, changeMission in
+                    values.withRandomNumberGenerator = .init(RecordedRNG(values.withRandomNumberGenerator, submission: { changeMission(.setRNG($0)) }))
+                }
                 .dependency(\.withRandomNumberGenerator, .init(SequentialRNG()))
         )
         await store.send(.increment) { $0.count = 1 }
@@ -115,8 +128,8 @@ class TestRecordingTests: XCTestCase {
         await store.send(.randomizeCount) { $0.count = 1 }
         await store.send(.randomizeCount) { $0.count = 2 }
         await submitter.waitToFinish()
-        let data = try ReplayRecordOf<AppReducer>(url: logLocation)
-        let expected = ReplayRecordOf<AppReducer>(start: .init(count: 0), replayActions: [
+        let data = try ReplayRecordOf<AppReducer, DependencyAction>(url: logLocation)
+        let expected = ReplayRecordOf<AppReducer, DependencyAction>(start: .init(count: 0), replayActions: [
             .quantum(.init(action: .increment, result: .init(count: 1))),
             .dependencySet(.setRNG(0)),
             .quantum(.init(action: .randomizeCount, result: .init(count: 0))),

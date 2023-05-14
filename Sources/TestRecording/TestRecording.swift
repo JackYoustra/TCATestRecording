@@ -31,14 +31,6 @@ struct RecordedRNG: RandomNumberGenerator {
     }
 }
 
-struct PlaybackRNG<S: IteratorProtocol>: RandomNumberGenerator where S.Element == UInt64 {
-    var numbers: S
-    
-    mutating func next() -> UInt64 {
-        numbers.next()!
-    }
-}
-
 struct SingleRNG: RandomNumberGenerator {
     var n: UInt64?
     
@@ -54,17 +46,13 @@ struct SingleRNG: RandomNumberGenerator {
     }
 }
 
-public enum DependencyAction: Codable, Equatable {
-    case setRNG(UInt64)
-}
-
-public enum LogMessage<State, Action> {
+public enum LogMessage<State, Action, UserDependencyAction> {
     case state(State)
     case action(Action)
-    case dependency(DependencyAction)
+    case dependency(UserDependencyAction)
 }
 
-extension LogMessage: Encodable where State: Encodable, Action: Encodable {
+extension LogMessage: Encodable where State: Encodable, Action: Encodable, UserDependencyAction: Encodable {
     func write(to outputStream: OutputStream, with encoder: JSONEncoder) {
         outputStream.write(try! encoder.encode(self))
         // write newline
@@ -72,13 +60,13 @@ extension LogMessage: Encodable where State: Encodable, Action: Encodable {
     }
 }
 
-extension LogMessage: Decodable where State: Decodable, Action: Decodable {}
+extension LogMessage: Decodable where State: Decodable, Action: Decodable, UserDependencyAction: Decodable {}
 
-public typealias ReplayRecordOf<T: ReducerProtocol> = ReplayRecord<T.State, T.Action> where T.State: Decodable, T.Action: Decodable
+public typealias ReplayRecordOf<T: ReducerProtocol, DependencyAction: Decodable> = ReplayRecord<T.State, T.Action, DependencyAction> where T.State: Decodable, T.Action: Decodable
 
-public enum ReplayAction<State: Decodable, Action: Decodable>: Decodable {
+public enum ReplayAction<State: Decodable, Action: Decodable, UserDependencyAction: Decodable>: Decodable {
     case quantum(ReplayQuantum<State, Action>)
-    case dependencySet(DependencyAction)
+    case dependencySet(UserDependencyAction)
 }
 
 public struct ReplayQuantum<State: Decodable, Action: Decodable>: Decodable {
@@ -93,12 +81,13 @@ extension UnkeyedDecodingContainer {
     }
 }
 
-public struct ReplayRecord<State: Decodable, Action: Decodable>: Decodable {
-    typealias LogEntry = LogMessage<State, Action>
+public struct ReplayRecord<State: Decodable, Action: Decodable, UserDependencyAction: Decodable>: Decodable {
+    typealias LogEntry = LogMessage<State, Action, UserDependencyAction>
+    public typealias UserReplayAction = ReplayAction<State, Action, UserDependencyAction>
     
     public let start: State
 
-    public let replayActions: [ReplayAction<State, Action>]
+    public let replayActions: [UserReplayAction]
     
     public init(url: URL) throws {
         let decoder = JSONDecoder()
@@ -110,7 +99,7 @@ public struct ReplayRecord<State: Decodable, Action: Decodable>: Decodable {
     public init(from decoder: Decoder) throws {
         var container: UnkeyedDecodingContainer = try decoder.unkeyedContainer()
         self.start = try container.decode(casePath: /LogEntry.state)
-        var quantums: [ReplayAction<State, Action>] = []
+        var quantums: [UserReplayAction] = []
         var inProgressAction: Action? = nil
         while !container.isAtEnd {
             let entry = try container.decode(LogEntry.self)
@@ -132,13 +121,19 @@ public struct ReplayRecord<State: Decodable, Action: Decodable>: Decodable {
         self.replayActions = quantums
     }
     
-    init(start: State, replayActions: [ReplayAction<State, Action>]) {
+    init(start: State, replayActions: [UserReplayAction]) {
         self.start = start
         self.replayActions = replayActions
     }
 }
 
-extension ReplayRecord: Equatable where State: Equatable, Action: Equatable {
+protocol DependencyOneUseSetting {
+    func resetDependency(on: inout DependencyValues)
+}
+
+extension ReplayRecord: Equatable where State: Equatable, Action: Equatable, UserDependencyAction: Equatable { }
+
+extension ReplayRecord where State: Equatable, Action: Equatable, UserDependencyAction: Equatable & DependencyOneUseSetting {
     @MainActor
     func test<Reducer: ReducerProtocol<State, Action>>(_ reducer: Reducer, file: StaticString = #file, line: UInt = #line) {
         let store = TestStore(
@@ -153,10 +148,7 @@ extension ReplayRecord: Equatable where State: Equatable, Action: Equatable {
                     $0 = quantum.result
                 }, file: file, line: line)
             case let .dependencySet(dep):
-                switch dep {
-                case let .setRNG(num):
-                    store.dependencies.withRandomNumberGenerator = .init(SingleRNG(n: num))
-                }
+                dep.resetDependency(on: &store.dependencies)
             }
         }
     }
@@ -166,8 +158,8 @@ class UncheckedIsFirst {
     var isFirst: Bool = true
 }
 
-public actor SharedThing<State: Encodable, Action: Encodable> {
-    public typealias LogEntry = LogMessage<State, Action>
+public actor SharedThing<State: Encodable, Action: Encodable, DependencyAction: Encodable> {
+    public typealias LogEntry = LogMessage<State, Action, DependencyAction>
     let outputStream: OutputStream
     private let send: AsyncStream<LogEntry>.Continuation
     let stream: AsyncStream<LogEntry>
@@ -215,29 +207,44 @@ public actor SharedThing<State: Encodable, Action: Encodable> {
 }
 
 extension ReplayQuantum: Equatable where State: Equatable, Action: Equatable {}
-extension ReplayAction: Equatable where State: Equatable, Action: Equatable {}
+extension ReplayAction: Equatable where State: Equatable, Action: Equatable, UserDependencyAction: Equatable {}
 
 extension ReducerProtocol where State: Encodable, Action: Encodable {
-    public func record(to url: URL, options: JSONEncoder.OutputFormatting? = nil) async -> _RecordReducer<Self> {
-        _RecordReducer(base: self, submitter: await SharedThing<State, Action>.init(url: url, options: options))
+    public func record<DependencyAction: Encodable>(to url: URL, options: JSONEncoder.OutputFormatting? = nil, modificationClosure: _RecordReducer<Self, DependencyAction>.ModificationClosure? = nil) async -> _RecordReducer<Self, DependencyAction> {
+        _RecordReducer(base: self, submitter: await SharedThing<State, Action, DependencyAction>.init(url: url, options: options), modificationClosure: modificationClosure)
     }
     
-    public func record(with submitter: SharedThing<State, Action>) -> _RecordReducer<Self> {
-        _RecordReducer(base: self, submitter: submitter)
+    public func record<DependencyAction: Encodable>(with submitter: SharedThing<State, Action, DependencyAction>, modificationClosure: _RecordReducer<Self, DependencyAction>.ModificationClosure? = nil) -> _RecordReducer<Self, DependencyAction> {
+        _RecordReducer(base: self, submitter: submitter, modificationClosure: modificationClosure)
+    }
+    
+    public func record(with submitter: SharedThing<State, Action, NeverCodable>) -> _RecordReducer<Self, NeverCodable> {
+        _RecordReducer(base: self, submitter: submitter, modificationClosure: nil)
     }
 }
 
-public struct _RecordReducer<Base: ReducerProtocol>: ReducerProtocol where Base.State: Encodable, Base.Action: Encodable {
+public struct NeverCodable: Equatable, Codable, DependencyOneUseSetting {
+    func resetDependency(on: inout Dependencies.DependencyValues) {
+        fatalError("Shouldn't call anything on nothing")
+    }
+    private init() {} }
+
+public struct _RecordReducer<Base: ReducerProtocol, DependencyAction: Encodable>: ReducerProtocol where Base.State: Encodable, Base.Action: Encodable {
   @usableFromInline
   let base: Base
 
   @usableFromInline
-    let submitter: SharedThing<Base.State, Base.Action>?
+    let submitter: SharedThing<Base.State, Base.Action, DependencyAction>?
+    
+    public typealias ModificationClosure = (inout DependencyValues, @escaping (DependencyAction) -> ()) -> ()
+    
+    let modificationClosure: ModificationClosure?
 
   @usableFromInline
-  init(base: Base, submitter: SharedThing<Base.State, Base.Action>?) {
+  init(base: Base, submitter: SharedThing<Base.State, Base.Action, DependencyAction>?, modificationClosure: ModificationClosure?) {
     self.base = base
     self.submitter = submitter
+      self.modificationClosure = modificationClosure
   }
 
 //  @inlinable
@@ -254,7 +261,10 @@ public struct _RecordReducer<Base: ReducerProtocol>: ReducerProtocol where Base.
         // Submit action
         submitter.submit(.action(action))
           let effects = withDependencies { values in
-              values.withRandomNumberGenerator = .init(RecordedRNG(values.withRandomNumberGenerator, submission: { submitter.submit(.dependency(.setRNG($0))) }))
+              modificationClosure?(&values, {
+                  submitter.submit(.dependency($0))
+              })
+//              values.withRandomNumberGenerator = .init(RecordedRNG(values.withRandomNumberGenerator, submission: { submitter.submit(.dependency(.setRNG($0))) }))
           } operation: {
               self.base.reduce(into: &state, action: action)
           }
