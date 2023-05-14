@@ -12,40 +12,6 @@ extension OutputStream {
     }
 }
 
-struct RecordedRNG: RandomNumberGenerator {
-    let isolatedInner: WithRandomNumberGenerator
-    let submission: (UInt64) -> ()
-    
-    init(_ wrng: WithRandomNumberGenerator, submission: @escaping (UInt64) -> ()) {
-        isolatedInner = wrng
-        self.submission = submission
-    }
-    
-    func next() -> UInt64 {
-        var num: UInt64! = nil
-        isolatedInner { rng in
-            num = rng.next()
-            submission(num)
-        }
-        return num
-    }
-}
-
-struct SingleRNG: RandomNumberGenerator {
-    var n: UInt64?
-    
-    init(n: UInt64) {
-        self.n = n
-    }
-    
-    mutating func next() -> UInt64 {
-        defer {
-            n = nil
-        }
-        return n!
-    }
-}
-
 public enum LogMessage<State, Action, UserDependencyAction> {
     case state(State)
     case action(Action)
@@ -92,7 +58,6 @@ public struct ReplayRecord<State: Decodable, Action: Decodable, UserDependencyAc
     public init(url: URL) throws {
         let decoder = JSONDecoder()
         let contents = try String(contentsOf: url)
-        print(contents)
         self = try decoder.decode(Self.self, from: "[\(contents)]".data(using: .utf8)!)
     }
     
@@ -103,7 +68,6 @@ public struct ReplayRecord<State: Decodable, Action: Decodable, UserDependencyAc
         var inProgressAction: Action? = nil
         while !container.isAtEnd {
             let entry = try container.decode(LogEntry.self)
-            print(entry)
             switch entry {
             case let .action(action):
                 assert(inProgressAction == nil)
@@ -127,7 +91,7 @@ public struct ReplayRecord<State: Decodable, Action: Decodable, UserDependencyAc
     }
 }
 
-protocol DependencyOneUseSetting {
+public protocol DependencyOneUseSetting {
     func resetDependency(on: inout DependencyValues)
 }
 
@@ -171,12 +135,12 @@ public actor SharedThing<State: Encodable, Action: Encodable, DependencyAction: 
     
     var waiter: Task<(), Never>! = nil
     
-    func waitToFinish() async {
+    public func waitToFinish() async {
         send.finish()
         _ = await waiter.value
     }
     
-    init(url: URL, options: JSONEncoder.OutputFormatting? = nil) async {
+    public init(url: URL, options: JSONEncoder.OutputFormatting? = nil) async {
         var c: AsyncStream<LogEntry>.Continuation! = nil
         let asyncQueue = AsyncStream(LogEntry.self, bufferingPolicy: .unbounded, {
             c = $0
@@ -197,7 +161,6 @@ public actor SharedThing<State: Encodable, Action: Encodable, DependencyAction: 
         // writer task, detatcheded but implicitly tied to stream
         waiter = Task(priority: .background) {
             for await entry in stream {
-                print("Entry is \(entry)")
                 // Encode in background
                 entry.write(to: outputStream, with: encoder)
             }
@@ -224,7 +187,7 @@ extension ReducerProtocol where State: Encodable, Action: Encodable {
 }
 
 public struct NeverCodable: Equatable, Codable, DependencyOneUseSetting {
-    func resetDependency(on: inout Dependencies.DependencyValues) {
+    public func resetDependency(on: inout Dependencies.DependencyValues) {
         fatalError("Shouldn't call anything on nothing")
     }
     private init() {} }

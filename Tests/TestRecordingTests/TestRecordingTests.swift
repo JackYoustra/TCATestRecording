@@ -1,5 +1,5 @@
 import XCTest
-@_spi(Internals) import ComposableArchitecture
+import ComposableArchitecture
 @testable import TestRecording
 
 struct SequentialRNG: RandomNumberGenerator {
@@ -7,6 +7,40 @@ struct SequentialRNG: RandomNumberGenerator {
     mutating func next() -> UInt64 {
         defer { count += 1 }
         return count
+    }
+}
+
+struct RecordedRNG: RandomNumberGenerator {
+    let isolatedInner: WithRandomNumberGenerator
+    let submission: (UInt64) -> ()
+    
+    init(_ wrng: WithRandomNumberGenerator, submission: @escaping (UInt64) -> ()) {
+        isolatedInner = wrng
+        self.submission = submission
+    }
+    
+    func next() -> UInt64 {
+        var num: UInt64! = nil
+        isolatedInner { rng in
+            num = rng.next()
+            submission(num)
+        }
+        return num
+    }
+}
+
+struct SingleRNG: RandomNumberGenerator {
+    var n: UInt64?
+    
+    init(n: UInt64) {
+        self.n = n
+    }
+    
+    mutating func next() -> UInt64 {
+        defer {
+            n = nil
+        }
+        return n!
     }
 }
 
@@ -138,7 +172,6 @@ class TestRecordingTests: XCTestCase {
             .dependencySet(.setRNG(2)),
             .quantum(.init(action: .randomizeCount, result: .init(count: 2))),
         ])
-        print(dump(data))
         XCTAssertNoDifference(expected, data)
 
         data.test(AppReducer())
