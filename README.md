@@ -7,7 +7,7 @@ and replay them in a test!
 
 Record Usage:
 
-```
+```swift
 let submitter = await SharedThing<AppReducer.State, AppReducer.Action, DependencyAction>(url: logLocation)
 AppReducer()
     .record(with: submitter) { values, recorder in
@@ -18,7 +18,7 @@ AppReducer()
 
 Playback usage:
 
-```
+```swift
 let data = try ReplayRecordOf<AppReducer, DependencyAction>(url: logLocation)
 data.test(AppReducer())
 ```
