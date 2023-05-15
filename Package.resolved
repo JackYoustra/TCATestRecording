@@ -118,15 +118,6 @@
       }
     },
     {
-      "identity" : "swift-reflection-mirror",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/philipturner/swift-reflection-mirror",
-      "state" : {
-        "branch" : "main",
-        "revision" : "a8f66fda2e8713955323483365fe711a56b91974"
-      }
-    },
-    {
       "identity" : "swiftui-navigation",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/pointfreeco/swiftui-navigation",
