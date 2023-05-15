@@ -97,7 +97,7 @@ public protocol DependencyOneUseSetting {
 
 extension ReplayRecord: Equatable where State: Equatable, Action: Equatable, UserDependencyAction: Equatable { }
 
-extension ReplayRecord where State: Equatable, Action: Equatable, UserDependencyAction: Equatable & DependencyOneUseSetting {
+extension ReplayRecord where State: Equatable, Action: Equatable, UserDependencyAction: DependencyOneUseSetting {
     @MainActor
     func test<Reducer: ReducerProtocol<State, Action>>(_ reducer: Reducer, file: StaticString = #file, line: UInt = #line) {
         let store = TestStore(
