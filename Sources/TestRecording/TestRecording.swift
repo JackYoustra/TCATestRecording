@@ -34,12 +34,12 @@ public enum ReplayAction<State: Decodable, Action: Decodable, UserDependencyActi
     case quantum(ReplayQuantum<State, Action>)
     case dependencySet(UserDependencyAction)
 
-    var asQuantum: ReplayQuantum<State, Action>? {
+    public var asQuantum: ReplayQuantum<State, Action>? {
         guard case let .quantum(q) = self else { return nil }
         return q
     }
 
-    var asDependencySet: UserDependencyAction? {
+    public var asDependencySet: UserDependencyAction? {
         guard case let .dependencySet(d) = self else { return nil }
         return d
     }
@@ -101,22 +101,30 @@ public struct ReplayRecord<State: Decodable, Action: Decodable, UserDependencyAc
     }
 
     public func toTestCase() -> String where State: Encodable, Action: Encodable, UserDependencyAction: Encodable {
-        let hostModuleName = String(describing: type(of: start))
-        let reducerName = hostModuleName
+        let stateQualifiedName = String(reflecting: State.self)
+        let names = stateQualifiedName.split(separator: ".")
+        assert(names.count >= 2)
+        let hostModuleName = names[0]
+        let reducerName = names[1]
+        let userDependencyActionName = String(reflecting: UserDependencyAction.self)
         let encoder = JSONEncoder()
         let decodedName = "decoding"
         var testBody = ""
         for (offset, record) in replayActions.enumerated() {
             switch record {
             case .quantum:
+                let quantumID = "quantum\(offset)"
                 testBody += """
-let quantum = \(decodedName).replayActions[\(offset)].asQuantum!
-store.send(quantum.action) {\n  $0 = quantum.result\n}
+let \(quantumID) = \(decodedName).replayActions[\(offset)].asQuantum!
+store.send(\(quantumID).action) {\n  $0 = \(quantumID).result\n}
 """
             case let .dependencySet(dep):
                 // encode dep
                 let dependencyString = try! String(data: encoder.encode(dep), encoding: .utf8)!
-                testBody += "// store.dependencies = \(dependencyString)"
+                testBody += """
+// store.dependencies = \(dependencyString)"
+\(decodedName).replayActions[\(offset)].asDependencySet!.resetDependency(on: &store.dependencies)
+"""
             }
 
             testBody += "\n\n"
@@ -128,18 +136,19 @@ return """
 
 import ComposableArchitecture
 import XCTest
+import TestRecording
 @testable import \(hostModuleName)
 
 class \(reducerName)Tests: XCTestCase {
 
-    func testRecording() {
+    func testRecording() throws {
         let logURL = URL(fileURLWithPath: #file)
             .deletingLastPathComponent()
             .appendingPathComponent("\(reducerName)Log.json")
-        let \(decodedName) = ReplayRecord<\(reducerName).State, \(reducerName).Action, UserDependencyAction>.init(url: logURL)
+        let \(decodedName) = try ReplayRecord<\(reducerName).State, \(reducerName).Action, \(userDependencyActionName)>.init(url: logURL)
         let store = TestStore(
             initialState: \(decodedName).start,
-            reducer: \(reducerName)(),
+            reducer: \(reducerName)()
         )
 
 \(testBody)

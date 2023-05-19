@@ -1,5 +1,6 @@
 import XCTest
 import ComposableArchitecture
+import SnapshotTesting
 @testable import TestRecording
 
 struct SequentialRNG: RandomNumberGenerator {
@@ -176,6 +177,7 @@ class TestRecordingTests: XCTestCase {
 
         data.test(AppReducer())
 
-        XCTAssertEqual("hi", data.toTestCase())
+        // snapshot data.toTestCase()
+        assertSnapshot(matching: data.toTestCase(), as: .lines, named: "testRandomizedGeneration")
     }
 }

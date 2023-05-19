@@ -21,6 +21,10 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-algorithms", from: "1.0.0"),
         .package(url: "https://github.com/JackYoustra/lumos", branch: "master"),
         .package(url: "https://github.com/apple/swift-async-algorithms", branch: "main"),
+        .package(
+            url: "https://github.com/pointfreeco/swift-snapshot-testing",
+            from: "1.10.0"
+        ),
     ],
     targets: [
         .target(
@@ -36,6 +40,7 @@ let package = Package(
             dependencies: [
                 "TestRecording",
                 .product(name: "Lumos", package: "lumos"),
+                .product(name: "SnapshotTesting", package: "swift-snapshot-testing"),
             ]
         ),
     ]
