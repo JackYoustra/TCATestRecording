@@ -175,5 +175,7 @@ class TestRecordingTests: XCTestCase {
         XCTAssertNoDifference(expected, data)
 
         data.test(AppReducer())
+
+        XCTAssertEqual("hi", data.toTestCase())
     }
 }
