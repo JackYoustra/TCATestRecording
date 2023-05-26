@@ -125,4 +125,67 @@ class TestRecordingTests: XCTestCase {
         // snapshot data.toTestCase()
         assertSnapshot(matching: data.toTestCase(url: logLocation), as: .lines, named: "testRandomizedGeneration")
     }
+
+    func testUUID() async throws {
+        struct UUIDReducer: ReducerProtocol {
+            struct State: Equatable, Codable {
+                var uuid: UUID
+            }
+
+            enum Action: Equatable, Codable {
+                case setUUID
+            }
+
+            @Dependency(\.uuid) var uuid
+
+            var body: some ReducerProtocolOf<Self> {
+                Reduce { state, action in
+                    switch action {
+                    case .setUUID:
+                        state.uuid = uuid()
+                        return .none
+                    }
+                }
+            }
+        }
+
+        let logLocation = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("test\(#line).log")
+        
+        let submitter = LogWriter<UUIDReducer.State, UUIDReducer.Action, DependencyAction>(url: logLocation)
+        let uuidInt = LockIsolated(0)
+        let initialUUID = UUID()
+        let store = TestStore(
+            initialState: UUIDReducer.State(uuid: initialUUID),
+            reducer: UUIDReducer()
+                .record(with: submitter)
+                .dependency(\.uuid, .init { UUID(uuidInt.value) } )
+        )
+
+        await store.send(.setUUID) {
+            $0.uuid = UUID(uuidInt.value)
+        }
+
+        uuidInt.setValue(52)
+
+        await store.send(.setUUID) {
+            $0.uuid = UUID(uuidInt.value)
+        }
+
+        await submitter.waitToFinish()
+
+        let data = try ReplayRecordOf<UUIDReducer, DependencyAction>(url: logLocation)
+        let expected = ReplayRecordOf<UUIDReducer, DependencyAction>(start: .init(uuid: initialUUID), replayActions: [
+            .dependencySet(.setUUID(.init(0))),
+            .quantum(.init(action: .setUUID, result: .init(uuid: .init(0)))),
+            .dependencySet(.setUUID(.init(52))),
+            .quantum(.init(action: .setUUID, result: .init(uuid: .init(52)))),
+        ])
+        XCTAssertNoDifference(expected, data)
+
+        data.test(UUIDReducer())
+
+        // snapshot data.toTestCase()
+        assertSnapshot(matching: data.toTestCase(url: logLocation), as: .lines, named: "testRandomizedGeneration")
+    }
 }
