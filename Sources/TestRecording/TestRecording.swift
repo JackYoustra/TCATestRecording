@@ -66,9 +66,13 @@ public struct ReplayRecord<State: Decodable, Action: Decodable, UserDependencyAc
     public let replayActions: [UserReplayAction]
     
     public init(url: URL) throws {
-        let decoder = JSONDecoder()
         let contents = try String(contentsOf: url)
-        self = try decoder.decode(Self.self, from: "[\(contents)]".data(using: .utf8)!)
+        self = try Self(string: contents)
+    }
+
+    public init(string: String) throws {
+        let decoder = JSONDecoder()
+        self = try decoder.decode(Self.self, from: "[\(string)]".data(using: .utf8)!)
     }
     
     public init(from decoder: Decoder) throws {
@@ -100,7 +104,7 @@ public struct ReplayRecord<State: Decodable, Action: Decodable, UserDependencyAc
         self.replayActions = replayActions
     }
 
-    public func toTestCase() -> String where State: Encodable, Action: Encodable, UserDependencyAction: Encodable {
+    public func toTestCase(url: URL) -> String where State: Encodable, Action: Encodable, UserDependencyAction: Encodable {
         let stateQualifiedName = String(reflecting: State.self)
         let names = stateQualifiedName.split(separator: ".")
         assert(names.count >= 2)
@@ -142,9 +146,7 @@ import TestRecording
 class \(reducerName)Tests: XCTestCase {
 
     func testRecording() throws {
-        let logURL = URL(fileURLWithPath: #file)
-            .deletingLastPathComponent()
-            .appendingPathComponent("\(reducerName)Log.json")
+        let logURL = URL(string: "\(url)")!
         let \(decodedName) = try ReplayRecord<\(reducerName).State, \(reducerName).Action, \(userDependencyActionName)>.init(url: logURL)
         let store = TestStore(
             initialState: \(decodedName).start,

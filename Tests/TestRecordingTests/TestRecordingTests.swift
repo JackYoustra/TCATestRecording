@@ -178,6 +178,6 @@ class TestRecordingTests: XCTestCase {
         data.test(AppReducer())
 
         // snapshot data.toTestCase()
-        assertSnapshot(matching: data.toTestCase(), as: .lines, named: "testRandomizedGeneration")
+        assertSnapshot(matching: data.toTestCase(url: logLocation), as: .lines, named: "testRandomizedGeneration")
     }
 }
