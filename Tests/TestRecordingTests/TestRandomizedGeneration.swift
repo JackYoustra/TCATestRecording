@@ -3,14 +3,13 @@
 import ComposableArchitecture
 import XCTest
 import TestRecording
-@testable import TestRecordingTests
 
 @available(macOS 13.0, *)
 class AppReducerTests: XCTestCase {
 
     func testRecording() throws {
         let logURL = URL(string: "file:///var/folders/lh/_v9mhxf13_g0qwyqgj0m8l2m0000gn/T/test.log")!
-        let decoding = try ReplayRecord<AppReducer.State, AppReducer.Action, TestRecordingTests.DependencyAction>.init(url: logURL)
+        let decoding = try ReplayRecord<AppReducer.State, AppReducer.Action, DependencyAction>.init(url: logURL)
         let store = TestStore(
             initialState: decoding.start,
             reducer: AppReducer()

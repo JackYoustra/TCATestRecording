@@ -191,7 +191,7 @@ class UncheckedIsFirst {
     var isFirst: Bool = true
 }
 
-public actor SharedThing<State: Encodable, Action: Encodable, DependencyAction: Encodable> {
+public actor LogWriter<State: Encodable, Action: Encodable, DependencyAction: Encodable> {
     public typealias LogEntry = LogMessage<State, Action, DependencyAction>
     let outputStream: OutputStream
     private let send: AsyncStream<LogEntry>.Continuation
@@ -209,7 +209,7 @@ public actor SharedThing<State: Encodable, Action: Encodable, DependencyAction: 
         _ = await waiter.value
     }
     
-    public init(url: URL, options: JSONEncoder.OutputFormatting? = nil) async {
+    public init(url: URL, options: JSONEncoder.OutputFormatting? = nil) {
         var c: AsyncStream<LogEntry>.Continuation! = nil
         let asyncQueue = AsyncStream(LogEntry.self, bufferingPolicy: .unbounded, {
             c = $0
@@ -229,7 +229,7 @@ public actor SharedThing<State: Encodable, Action: Encodable, DependencyAction: 
         
         // writer task, detatcheded but implicitly tied to stream
         waiter = Task(priority: .background) {
-            for await entry in stream {
+            for await entry in asyncQueue {
                 // Encode in background
                 entry.write(to: outputStream, with: encoder)
             }
@@ -242,38 +242,28 @@ extension ReplayQuantum: Equatable where State: Equatable, Action: Equatable {}
 extension ReplayAction: Equatable where State: Equatable, Action: Equatable, UserDependencyAction: Equatable {}
 
 extension ReducerProtocol where State: Encodable, Action: Encodable {
-    public func record<DependencyAction: Encodable>(to url: URL, options: JSONEncoder.OutputFormatting? = nil, modificationClosure: _RecordReducer<Self, DependencyAction>.ModificationClosure? = nil) async -> _RecordReducer<Self, DependencyAction> {
-        _RecordReducer(base: self, submitter: await SharedThing<State, Action, DependencyAction>.init(url: url, options: options), modificationClosure: modificationClosure)
+    public func record<DependencyAction: Encodable>(to url: URL, options: JSONEncoder.OutputFormatting? = nil, modificationClosure: _RecordReducer<Self, DependencyAction>.ModificationClosure? = nil) -> _RecordReducer<Self, DependencyAction> {
+        _RecordReducer(base: self, submitter: LogWriter<State, Action, DependencyAction>.init(url: url, options: options), modificationClosure: modificationClosure)
     }
     
-    public func record<DependencyAction: Encodable>(with submitter: SharedThing<State, Action, DependencyAction>, modificationClosure: _RecordReducer<Self, DependencyAction>.ModificationClosure? = nil) -> _RecordReducer<Self, DependencyAction> {
+    public func record<DependencyAction: Encodable>(with submitter: LogWriter<State, Action, DependencyAction>, modificationClosure: _RecordReducer<Self, DependencyAction>.ModificationClosure? = nil) -> _RecordReducer<Self, DependencyAction> {
         _RecordReducer(base: self, submitter: submitter, modificationClosure: modificationClosure)
     }
-    
-    public func record(with submitter: SharedThing<State, Action, NeverCodable>) -> _RecordReducer<Self, NeverCodable> {
-        _RecordReducer(base: self, submitter: submitter, modificationClosure: nil)
-    }
 }
-
-public struct NeverCodable: Equatable, Codable, DependencyOneUseSetting {
-    public func resetDependency(on: inout Dependencies.DependencyValues) {
-        fatalError("Shouldn't call anything on nothing")
-    }
-    private init() {} }
 
 public struct _RecordReducer<Base: ReducerProtocol, DependencyAction: Encodable>: ReducerProtocol where Base.State: Encodable, Base.Action: Encodable {
   @usableFromInline
   let base: Base
 
   @usableFromInline
-    let submitter: SharedThing<Base.State, Base.Action, DependencyAction>?
+    let submitter: LogWriter<Base.State, Base.Action, DependencyAction>?
     
     public typealias ModificationClosure = (inout DependencyValues, @escaping (DependencyAction) -> ()) -> ()
     
     let modificationClosure: ModificationClosure?
 
   @usableFromInline
-  init(base: Base, submitter: SharedThing<Base.State, Base.Action, DependencyAction>?, modificationClosure: ModificationClosure?) {
+  init(base: Base, submitter: LogWriter<Base.State, Base.Action, DependencyAction>?, modificationClosure: ModificationClosure?) {
     self.base = base
     self.submitter = submitter
       self.modificationClosure = modificationClosure

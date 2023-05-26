@@ -9,7 +9,7 @@ class AppReducerTests: XCTestCase {
 
     func testRecording() throws {
         let logURL = URL(string: "file:///var/folders/lh/_v9mhxf13_g0qwyqgj0m8l2m0000gn/T/test.log")!
-        let decoding = try ReplayRecord<AppReducer.State, AppReducer.Action, TestRecordingTests.TestRecordingTests.DependencyAction>.init(url: logURL)
+        let decoding = try ReplayRecord<AppReducer.State, AppReducer.Action, TestRecording.DependencyAction>.init(url: logURL)
         let store = TestStore(
             initialState: decoding.start,
             reducer: AppReducer()

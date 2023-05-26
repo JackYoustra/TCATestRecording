@@ -8,7 +8,7 @@ and replay them in a test!
 Record Usage:
 
 ```swift
-let submitter = await SharedThing<AppReducer.State, AppReducer.Action, DependencyAction>(url: logLocation)
+let submitter = LogWriter<AppReducer.State, AppReducer.Action, DependencyAction>(url: logLocation)
 AppReducer()
     .record(with: submitter) { values, recorder in
         values.withRandomNumberGenerator = .init(RecordedRNG(values.withRandomNumberGenerator, submission: { recording(.setRNG($0)) }))

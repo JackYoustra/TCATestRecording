@@ -3,48 +3,6 @@ import ComposableArchitecture
 import SnapshotTesting
 @testable import TestRecording
 
-struct SequentialRNG: RandomNumberGenerator {
-    var count = UInt64(0)
-    mutating func next() -> UInt64 {
-        defer { count += 1 }
-        return count
-    }
-}
-
-struct RecordedRNG: RandomNumberGenerator {
-    let isolatedInner: WithRandomNumberGenerator
-    let submission: (UInt64) -> ()
-    
-    init(_ wrng: WithRandomNumberGenerator, submission: @escaping (UInt64) -> ()) {
-        isolatedInner = wrng
-        self.submission = submission
-    }
-    
-    func next() -> UInt64 {
-        var num: UInt64! = nil
-        isolatedInner { rng in
-            num = rng.next()
-            submission(num)
-        }
-        return num
-    }
-}
-
-struct SingleRNG: RandomNumberGenerator {
-    var n: UInt64?
-    
-    init(n: UInt64) {
-        self.n = n
-    }
-    
-    mutating func next() -> UInt64 {
-        defer {
-            n = nil
-        }
-        return n!
-    }
-}
-
 struct AppReducer: ReducerProtocol {
     struct State: Equatable, Codable {
         var count: Int
@@ -88,7 +46,7 @@ class TestRecordingTests: XCTestCase {
         let logLocation = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("test.log")
         for optionSet in [[], JSONEncoder.OutputFormatting.prettyPrinted] {
-            let submitter = await SharedThing<AppReducer.State, AppReducer.Action, NeverCodable>(url: logLocation, options: optionSet)
+            let submitter = LogWriter<AppReducer.State, AppReducer.Action, DependencyAction>(url: logLocation, options: optionSet)
             let store = TestStore(
                 initialState: AppReducer.State(),
                 reducer: AppReducer()
@@ -105,8 +63,8 @@ class TestRecordingTests: XCTestCase {
             await submitter.waitToFinish()
 
             // Assert contents at test.log matches "hi"
-            let data = try ReplayRecordOf<AppReducer, NeverCodable>(url: logLocation)
-            let expected = ReplayRecordOf<AppReducer, NeverCodable>(start: .init(count: 0), replayActions: [
+            let data = try ReplayRecordOf<AppReducer, DependencyAction>(url: logLocation)
+            let expected = ReplayRecordOf<AppReducer, DependencyAction>(start: .init(count: 0), replayActions: [
                 .quantum(.init(action: .increment, result: .init(count: 1))),
                 .quantum(.init(action: .increment, result: .init(count: 2))),
             ])
@@ -116,7 +74,7 @@ class TestRecordingTests: XCTestCase {
             data.test(AppReducer())
             
             // Make sure the tests don't pass if they shouldn't
-            let fails: [ReplayRecordOf<AppReducer, NeverCodable>] = [
+            let fails: [ReplayRecordOf<AppReducer, DependencyAction>] = [
                 .init(start: .init(count: 1), replayActions: [
                     .quantum(.init(action: .increment, result: .init(count: 1))),
                              .quantum(.init(action: .increment, result: .init(count: 2))),
@@ -135,27 +93,14 @@ class TestRecordingTests: XCTestCase {
         }
     }
     
-    public enum DependencyAction: Codable, Equatable, DependencyOneUseSetting {
-        case setRNG(UInt64)
-
-        func resetDependency(on deps: inout Dependencies.DependencyValues) {
-            switch self {
-            case let .setRNG(rn):
-                deps.withRandomNumberGenerator = .init(SingleRNG(n: rn))
-            }
-        }
-    }
-    
     func testRandomized() async throws {
         let logLocation = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("test.log")
-        let submitter = await SharedThing<AppReducer.State, AppReducer.Action, DependencyAction>(url: logLocation)
+        let submitter = LogWriter<AppReducer.State, AppReducer.Action, DependencyAction>(url: logLocation)
         let store = TestStore(
             initialState: AppReducer.State(),
             reducer: AppReducer()
-                .record(with: submitter) { values, changeMission in
-                    values.withRandomNumberGenerator = .init(RecordedRNG(values.withRandomNumberGenerator, submission: { changeMission(.setRNG($0)) }))
-                }
+                .record(with: submitter)
                 .dependency(\.withRandomNumberGenerator, .init(SequentialRNG()))
         )
         await store.send(.increment) { $0.count = 1 }
