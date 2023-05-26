@@ -114,13 +114,25 @@ public struct ReplayRecord<State: Decodable, Action: Decodable, UserDependencyAc
         let encoder = JSONEncoder()
         let decodedName = "decoding"
         var testBody = ""
+        var prior = start
         for (offset, record) in replayActions.enumerated() {
             switch record {
-            case .quantum:
+            case let .quantum(q):
+                defer {
+                    prior = q.result
+                }
+                let change = diff(prior, q.result).map { "\($0)\n" } ?? "  (No state changes)\n"
+                // replace all newlines in change with a newline followed by a //
+                let changeMassaged = change.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\n", with: "\n// ")
                 let quantumID = "quantum\(offset)"
                 testBody += """
+// change:
+// \(changeMassaged)
+
 let \(quantumID) = \(decodedName).replayActions[\(offset)].asQuantum!
-store.send(\(quantumID).action) {\n  $0 = \(quantumID).result\n}
+store.send(\(quantumID).action) {
+  $0 = \(quantumID).result
+}
 """
             case let .dependencySet(dep):
                 // encode dep

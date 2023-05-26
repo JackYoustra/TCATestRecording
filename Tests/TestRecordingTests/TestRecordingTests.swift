@@ -154,7 +154,7 @@ class TestRecordingTests: XCTestCase {
         
         let submitter = LogWriter<UUIDReducer.State, UUIDReducer.Action, DependencyAction>(url: logLocation)
         let uuidInt = LockIsolated(0)
-        let initialUUID = UUID()
+        let initialUUID = UUID(2748493749)
         let store = TestStore(
             initialState: UUIDReducer.State(uuid: initialUUID),
             reducer: UUIDReducer()
