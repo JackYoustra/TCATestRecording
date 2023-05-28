@@ -199,16 +199,15 @@ extension ReplayRecord where State: Equatable, Action: Equatable, UserDependency
     }
 }
 
-class UncheckedIsFirst {
-    var isFirst: Bool = true
+public class UncheckedIsFirst {
+    public var isFirst: Bool = true
 }
 
 public actor LogWriter<State: Encodable, Action: Encodable, DependencyAction: Encodable> {
     public typealias LogEntry = LogMessage<State, Action, DependencyAction>
-    let outputStream: OutputStream
     private let send: AsyncStream<LogEntry>.Continuation
     let stream: AsyncStream<LogEntry>
-    nonisolated let uncheckedIsFirst = UncheckedIsFirst()
+    nonisolated public let uncheckedIsFirst = UncheckedIsFirst()
     
     nonisolated public func submit(_ entry: LogEntry) {
         send.yield(entry)
@@ -232,7 +231,6 @@ public actor LogWriter<State: Encodable, Action: Encodable, DependencyAction: En
         guard let outputStream = OutputStream(url: url, append: false) else {
             fatalError("Unable to create file")
         }
-        self.outputStream = outputStream
         outputStream.open()
         let encoder = JSONEncoder()
         if let options {
@@ -272,7 +270,7 @@ public struct _RecordReducer<Base: ReducerProtocol, DependencyAction: Encodable>
     
     public typealias ModificationClosure = (inout DependencyValues, @escaping (DependencyAction) -> ()) -> ()
     
-    let modificationClosure: ModificationClosure?
+    public let modificationClosure: ModificationClosure?
 
   @usableFromInline
   init(base: Base, submitter: LogWriter<Base.State, Base.Action, DependencyAction>?, modificationClosure: ModificationClosure?) {
@@ -281,11 +279,10 @@ public struct _RecordReducer<Base: ReducerProtocol, DependencyAction: Encodable>
       self.modificationClosure = modificationClosure
   }
 
-//  @inlinable
+ @inlinable
   public func reduce(
     into state: inout Base.State, action: Base.Action
   ) -> EffectTask<Base.Action> {
-    #if DEBUG
       if let submitter = self.submitter {
           if submitter.uncheckedIsFirst.isFirst {
               // Submit initial state. Would be great to if-gate!
@@ -302,12 +299,11 @@ public struct _RecordReducer<Base: ReducerProtocol, DependencyAction: Encodable>
           } operation: {
               self.base.reduce(into: &state, action: action)
           }
-        // Need to be synchronous or else may be out of order! Try to keep to fast path
+        // Need to be synchronous or else may be out of order! Try to keep to fast path
         // Submit new state
         submitter.submit(.state(state))
         return effects
       }
-    #endif
     return self.base.reduce(into: &state, action: action)
   }
 }
