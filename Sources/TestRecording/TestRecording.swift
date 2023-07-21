@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 import Algorithms
 import AsyncAlgorithms
+import Combine
 
 extension OutputStream {
     func write(_ data: Data) {
@@ -70,8 +71,17 @@ public struct ReplayRecord<State: Decodable, Action: Decodable, UserDependencyAc
         self = try Self(string: contents)
     }
 
+    public init<D: TopLevelDecoder>(url: URL, decoder: D) throws where D.Input == Data {
+        let contents = try String(contentsOf: url)
+        self = try Self(string: contents, decoder: decoder)
+    }
+
     public init(string: String) throws {
         let decoder = JSONDecoder()
+        self = try decoder.decode(Self.self, from: "[\(string)]".data(using: .utf8)!)
+    }
+
+    public init<D: TopLevelDecoder>(string: String, decoder: D) throws where D.Input == Data {
         self = try decoder.decode(Self.self, from: "[\(string)]".data(using: .utf8)!)
     }
     
@@ -218,6 +228,10 @@ public actor LogWriter<State: Encodable, Action: Encodable, DependencyAction: En
     public func waitToFinish() async {
         send.finish()
         _ = await waiter.value
+    }
+
+    deinit {
+        send.finish()
     }
     
     public init(url: URL, options: JSONEncoder.OutputFormatting? = nil) {
