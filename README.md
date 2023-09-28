@@ -12,6 +12,8 @@ let submitter = LogWriter<AppReducer.State, AppReducer.Action, DependencyAction>
 AppReducer()
     .record(with: submitter) { values, recorder in
         values.withRandomNumberGenerator = .init(RecordedRNG(values.withRandomNumberGenerator, submission: { recording(.setRNG($0)) }))
+        // stub other dependencies, especially ones used in your test
+        // you can use ones out of the box in DependencyAction, or create your own enum
     }
     // Rest of dependencies
 ```

@@ -37,6 +37,20 @@ extension XCTestCase {
             XCTFail("Didn't have any error", file: file, line: line)
         }
     }
+
+    func ignoreIssueResilient(_ execute: () async throws -> (), file: StaticString = #file, line: UInt = #line) async rethrows {
+        Lumos.swizzle(type: .instance, originalClass: XCTestCase.self, originalSelector: NSSelectorFromString("_recordIssue:"), swizzledClass: TestRecordingDummyStore.self, swizzledSelector: #selector(TestRecordingDummyStore._recordIssue(_:)))
+        TestRecordingDummyStore.didRecord = false
+        defer {
+            TestRecordingDummyStore.didRecord = false
+        }
+        try await execute()
+        // Re-enable here so we can actually record a failure if it happens, lol
+        Lumos.swizzle(type: .instance, originalClass: XCTestCase.self, originalSelector: NSSelectorFromString("_recordIssue:"), swizzledClass: TestRecordingDummyStore.self, swizzledSelector: #selector(TestRecordingDummyStore._recordIssue(_:)))
+        if !TestRecordingDummyStore.didRecord {
+            XCTFail("Didn't have any error", file: file, line: line)
+        }
+    }
 }
 
 fileprivate class TestRecordingDummyStore: NSObject {

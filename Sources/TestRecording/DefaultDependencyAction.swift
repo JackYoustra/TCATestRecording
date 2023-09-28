@@ -71,7 +71,7 @@ public enum DependencyAction: Codable, Equatable, DependencyOneUseSetting {
     }
 }
 
-public extension ReducerProtocol where State: Encodable, Action: Encodable {
+public extension Reducer where State: Encodable, Action: Encodable {
     func record(with submitter: LogWriter<State, Action, DependencyAction>) -> _RecordReducer<Self, DependencyAction> {
         self.record(with: submitter) { values, changeMission in
             values.withRandomNumberGenerator = .init(RecordedRNG(values.withRandomNumberGenerator, submission: { changeMission(.setRNG($0)) }))

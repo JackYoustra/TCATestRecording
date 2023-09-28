@@ -5,18 +5,20 @@ import XCTest
 import TestRecording
 
 @available(macOS 13.0, *)
+@MainActor
 class AppReducerTests: XCTestCase {
 
-    func testRecording() throws {
+    func testRecording() async throws {
         let logURL = URL(string: "file:///var/folders/lh/_v9mhxf13_g0qwyqgj0m8l2m0000gn/T/test.log")!
         let decoding = try ReplayRecord<AppReducer.State, AppReducer.Action, DependencyAction>.init(url: logURL)
         let store = TestStore(
-            initialState: decoding.start,
-            reducer: AppReducer()
-        )
+            initialState: decoding.start
+        ) {
+          AppReducer()
+        }
 
         let quantum0 = decoding.replayActions[0].asQuantum!
-        store.send(quantum0.action) {
+        await store.send(quantum0.action) {
           $0 = quantum0.result
         }
         
@@ -24,7 +26,7 @@ class AppReducerTests: XCTestCase {
         decoding.replayActions[1].asDependencySet!.resetDependency(on: &store.dependencies)
         
         let quantum2 = decoding.replayActions[2].asQuantum!
-        store.send(quantum2.action) {
+        await store.send(quantum2.action) {
           $0 = quantum2.result
         }
         
@@ -32,7 +34,7 @@ class AppReducerTests: XCTestCase {
         decoding.replayActions[3].asDependencySet!.resetDependency(on: &store.dependencies)
         
         let quantum4 = decoding.replayActions[4].asQuantum!
-        store.send(quantum4.action) {
+        await store.send(quantum4.action) {
           $0 = quantum4.result
         }
         
@@ -40,10 +42,8 @@ class AppReducerTests: XCTestCase {
         decoding.replayActions[5].asDependencySet!.resetDependency(on: &store.dependencies)
         
         let quantum6 = decoding.replayActions[6].asQuantum!
-        store.send(quantum6.action) {
+        await store.send(quantum6.action) {
           $0 = quantum6.result
         }
-        
-        
     }
 }

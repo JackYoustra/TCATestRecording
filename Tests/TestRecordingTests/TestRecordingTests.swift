@@ -3,7 +3,7 @@ import ComposableArchitecture
 import SnapshotTesting
 @testable import TestRecording
 
-struct AppReducer: ReducerProtocol {
+struct AppReducer: Reducer {
     struct State: Equatable, Codable {
         var count: Int
         
@@ -20,7 +20,7 @@ struct AppReducer: ReducerProtocol {
     
     @Dependency(\.withRandomNumberGenerator) var rng
 
-    var body: some ReducerProtocolOf<Self> {
+    var body: some ReducerOf<Self> {
         Reduce { state, action in
             switch action {
             case .increment:
@@ -48,10 +48,11 @@ class TestRecordingTests: XCTestCase {
         for optionSet in [[], JSONEncoder.OutputFormatting.prettyPrinted] {
             let submitter = LogWriter<AppReducer.State, AppReducer.Action, DependencyAction>(url: logLocation, options: optionSet)
             let store = TestStore(
-                initialState: AppReducer.State(),
-                reducer: AppReducer()
+                initialState: AppReducer.State()
+            ) {
+                AppReducer()
                     .record(with: submitter)
-            )
+            }
             await store.send(.increment) {
                 $0.count = 1
             }
@@ -71,7 +72,7 @@ class TestRecordingTests: XCTestCase {
             XCTAssertNoDifference(expected, data)
             
             // And finally, the test should pass
-            data.test(AppReducer())
+            await data.test(AppReducer())
             
             // Make sure the tests don't pass if they shouldn't
             let fails: [ReplayRecordOf<AppReducer, DependencyAction>] = [
@@ -86,8 +87,8 @@ class TestRecordingTests: XCTestCase {
             ]
             
             for fail in fails {
-                ignoreIssueResilient {
-                    fail.test(AppReducer())
+                await ignoreIssueResilient {
+                    await fail.test(AppReducer())
                 }
             }
         }
@@ -98,11 +99,12 @@ class TestRecordingTests: XCTestCase {
             .appendingPathComponent("test.log")
         let submitter = LogWriter<AppReducer.State, AppReducer.Action, DependencyAction>(url: logLocation)
         let store = TestStore(
-            initialState: AppReducer.State(),
-            reducer: AppReducer()
+            initialState: AppReducer.State()
+        ) {
+            AppReducer()
                 .record(with: submitter)
                 .dependency(\.withRandomNumberGenerator, .init(SequentialRNG()))
-        )
+        }
         await store.send(.increment) { $0.count = 1 }
         await store.send(.randomizeCount) { $0.count = 0 }
         await store.send(.randomizeCount) { $0.count = 1 }
@@ -120,14 +122,14 @@ class TestRecordingTests: XCTestCase {
         ])
         XCTAssertNoDifference(expected, data)
 
-        data.test(AppReducer())
+        await data.test(AppReducer())
 
         // snapshot data.toTestCase()
         assertSnapshot(matching: data.toTestCase(url: logLocation), as: .lines, named: "testRandomizedGeneration")
     }
 
     func testUUID() async throws {
-        struct UUIDReducer: ReducerProtocol {
+        struct UUIDReducer: Reducer {
             struct State: Equatable, Codable {
                 var uuid: UUID
             }
@@ -138,7 +140,7 @@ class TestRecordingTests: XCTestCase {
 
             @Dependency(\.uuid) var uuid
 
-            var body: some ReducerProtocolOf<Self> {
+            var body: some ReducerOf<Self> {
                 Reduce { state, action in
                     switch action {
                     case .setUUID:
@@ -156,11 +158,12 @@ class TestRecordingTests: XCTestCase {
         let uuidInt = LockIsolated(0)
         let initialUUID = UUID(2748493749)
         let store = TestStore(
-            initialState: UUIDReducer.State(uuid: initialUUID),
-            reducer: UUIDReducer()
+            initialState: UUIDReducer.State(uuid: initialUUID)
+        ) {
+            UUIDReducer()
                 .record(with: submitter)
                 .dependency(\.uuid, .init { UUID(uuidInt.value) } )
-        )
+        }
 
         await store.send(.setUUID) {
             $0.uuid = UUID(uuidInt.value)
@@ -183,9 +186,13 @@ class TestRecordingTests: XCTestCase {
         ])
         XCTAssertNoDifference(expected, data)
 
-        data.test(UUIDReducer())
+        await data.test(UUIDReducer())
 
         // snapshot data.toTestCase()
-        assertSnapshot(matching: data.toTestCase(url: logLocation), as: .lines, named: "testRandomizedGeneration")
+        let logString = data.toTestCase(url: logLocation)
+        // Remove occurances of logLocation in logString
+        let sanitizedLogString = logString.replacingOccurrences(of: logLocation.absoluteString, with: "<##LOG_LOCATION##>")
+            
+        assertSnapshot(matching: sanitizedLogString, as: .lines, named: "testRandomizedGeneration")
     }
 }

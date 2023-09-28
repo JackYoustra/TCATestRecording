@@ -17,13 +17,13 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/pointfreeco/swift-composable-architecture", from: "0.53.0"),
+        .package(url: "https://github.com/pointfreeco/swift-composable-architecture", from: "1.0.0"),
         .package(url: "https://github.com/apple/swift-algorithms", from: "1.0.0"),
         .package(url: "https://github.com/JackYoustra/lumos", branch: "master"),
         .package(url: "https://github.com/apple/swift-async-algorithms", branch: "main"),
         .package(
             url: "https://github.com/pointfreeco/swift-snapshot-testing",
-            from: "1.10.0"
+            from: "1.13.0"
         ),
     ],
     targets: [

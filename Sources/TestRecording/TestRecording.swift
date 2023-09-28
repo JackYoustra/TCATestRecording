@@ -29,7 +29,7 @@ extension LogMessage: Encodable where State: Encodable, Action: Encodable, UserD
 
 extension LogMessage: Decodable where State: Decodable, Action: Decodable, UserDependencyAction: Decodable {}
 
-public typealias ReplayRecordOf<T: ReducerProtocol, DependencyAction: Decodable> = ReplayRecord<T.State, T.Action, DependencyAction> where T.State: Decodable, T.Action: Decodable
+public typealias ReplayRecordOf<T: Reducer, DependencyAction: Decodable> = ReplayRecord<T.State, T.Action, DependencyAction> where T.State: Decodable, T.Action: Decodable
 
 public enum ReplayAction<State: Decodable, Action: Decodable, UserDependencyAction: Decodable>: Decodable {
     case quantum(ReplayQuantum<State, Action>)
@@ -190,16 +190,17 @@ extension ReplayRecord: Equatable where State: Equatable, Action: Equatable, Use
 
 extension ReplayRecord where State: Equatable, Action: Equatable, UserDependencyAction: DependencyOneUseSetting {
     @MainActor
-    func test<Reducer: ReducerProtocol<State, Action>>(_ reducer: Reducer, file: StaticString = #file, line: UInt = #line) {
+    func test<R: Reducer>(_ reducer: R, file: StaticString = #file, line: UInt = #line) async where R.State == State, R.Action == Action {
         let store = TestStore(
-            initialState: start,
-            reducer: reducer
-        )
+            initialState: start
+        ) {
+            reducer
+        }
         
         for action in replayActions {
             switch action {
             case let .quantum(quantum):
-                store.send(quantum.action, assert: {
+                await store.send(quantum.action, assert: {
                     $0 = quantum.result
                 }, file: file, line: line)
             case let .dependencySet(dep):
@@ -250,14 +251,14 @@ public actor LogWriter<State: Encodable, Action: Encodable, DependencyAction: En
         if let options {
             encoder.outputFormatting = options
         }
-        
+        let uncheckedCapturing = UncheckedSendable(outputStream)
         // writer task, detatcheded but implicitly tied to stream
         waiter = Task(priority: .background) {
             for await entry in asyncQueue {
                 // Encode in background
-                entry.write(to: outputStream, with: encoder)
+                entry.write(to: uncheckedCapturing.value, with: encoder)
             }
-            outputStream.close()
+            uncheckedCapturing.value.close()
         }
     }
 }
@@ -265,7 +266,7 @@ public actor LogWriter<State: Encodable, Action: Encodable, DependencyAction: En
 extension ReplayQuantum: Equatable where State: Equatable, Action: Equatable {}
 extension ReplayAction: Equatable where State: Equatable, Action: Equatable, UserDependencyAction: Equatable {}
 
-extension ReducerProtocol where State: Encodable, Action: Encodable {
+extension Reducer where State: Encodable, Action: Encodable {
     public func record<DependencyAction: Encodable>(to url: URL, options: JSONEncoder.OutputFormatting? = nil, modificationClosure: _RecordReducer<Self, DependencyAction>.ModificationClosure? = nil) -> _RecordReducer<Self, DependencyAction> {
         _RecordReducer(base: self, submitter: LogWriter<State, Action, DependencyAction>.init(url: url, options: options), modificationClosure: modificationClosure)
     }
@@ -275,7 +276,7 @@ extension ReducerProtocol where State: Encodable, Action: Encodable {
     }
 }
 
-public struct _RecordReducer<Base: ReducerProtocol, DependencyAction: Encodable>: ReducerProtocol where Base.State: Encodable, Base.Action: Encodable {
+public struct _RecordReducer<Base: Reducer, DependencyAction: Encodable>: Reducer where Base.State: Encodable, Base.Action: Encodable {
   @usableFromInline
   let base: Base
 
@@ -296,7 +297,7 @@ public struct _RecordReducer<Base: ReducerProtocol, DependencyAction: Encodable>
  @inlinable
   public func reduce(
     into state: inout Base.State, action: Base.Action
-  ) -> EffectTask<Base.Action> {
+  ) -> Effect<Base.Action> {
       if let submitter = self.submitter {
           if submitter.uncheckedIsFirst.isFirst {
               // Submit initial state. Would be great to if-gate!

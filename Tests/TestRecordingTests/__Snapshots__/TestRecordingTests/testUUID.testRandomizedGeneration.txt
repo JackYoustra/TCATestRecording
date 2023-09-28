@@ -8,7 +8,7 @@ import TestRecording
 class TestRecordingTestsTests: XCTestCase {
 
     func testRecording() throws {
-        let logURL = URL(string: "file:///var/folders/lh/_v9mhxf13_g0qwyqgj0m8l2m0000gn/T/test153.log")!
+        let logURL = URL(string: "<##LOG_LOCATION##>")!
         let decoding = try ReplayRecord<TestRecordingTests.State, TestRecordingTests.Action, TestRecording.DependencyAction>.init(url: logURL)
         let store = TestStore(
             initialState: decoding.start,
